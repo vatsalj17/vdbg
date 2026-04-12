@@ -2,6 +2,7 @@
 #define REGISTER_H
 
 #include <stddef.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/user.h>
 
@@ -39,11 +40,13 @@ typedef enum Registers {
 
 typedef struct RegDescriptor reg_descriptor;
 
-long get_register_value(reg r, pid_t pid);
-void set_register_value(reg r, pid_t pid, long value);
-long get_register_value_from_dwarf_register(int regnum, pid_t pid);
-char* get_register_name(reg r);
-reg get_register_from_name(const char* str);
+uintptr_t get_register_value(reg r, pid_t pid);
+void set_register_value(reg r, pid_t pid, uintptr_t value);
+uintptr_t get_register_value_from_dwarf_register(int regnum, pid_t pid);
+char *get_register_name(reg r);
+reg get_register_from_name(const char *str);
 void dump_registers(pid_t pid);
+uintptr_t get_pc(pid_t pid);
+void set_pc(pid_t pid, uintptr_t value);
 
 #endif

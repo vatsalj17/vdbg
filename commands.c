@@ -18,7 +18,7 @@ void handle_command(debugger *dbg, char *input) {
 		continue_execution(dbg);
 
 	} else if (is_prefix(command, "break")) {
-		long addr = strtol(args[1], NULL, 16);
+		uintptr_t addr = strtoul(args[1], NULL, 16);
 		set_breakpoint_at_addr(dbg, addr);
 
 	} else if (is_prefix(command, "register")) {
@@ -29,7 +29,7 @@ void handle_command(debugger *dbg, char *input) {
 			printf("0x%016lx\n",
 			       get_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg)));
 		} else if (is_prefix(args[1], "write")) {
-			long value = strtol(args[3], NULL, 16);
+			uintptr_t value = strtoul(args[3], NULL, 16);
 			set_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg), value);
 		} else {
 			fprintf(stderr, "register %s: invalid command\n", args[1]);
@@ -37,16 +37,24 @@ void handle_command(debugger *dbg, char *input) {
 
 	} else if (is_prefix(command, "memory")) {
 
-		long address = strtol(args[2], NULL, 16);
+		uintptr_t address = strtoul(args[2], NULL, 16);
 		if (is_prefix(args[1], "read")) {
 			printf("0x%016lx\n", read_memory(dbg, address));
 		} else if (is_prefix(args[1], "write")) {
-			long value = strtol(args[3], NULL, 16);
+			uintptr_t value = strtoul(args[3], NULL, 16);
 			write_memory(dbg, address, value);
 		} else {
 			fprintf(stderr, "memory %s: invalid command\n", args[1]);
 		}
 
+	} else if (is_prefix(command, "exit")) {
+		if (dbg_kill_tracee(dbg)) {
+            printf("Exiting....\n");
+			dbg_free(dbg);
+			exit(0);
+		} else {
+            printf("You told not to exit, so let's continue..\n");
+        }
 	} else {
 		fprintf(stderr, "%s: invalid command\n", command);
 	}
