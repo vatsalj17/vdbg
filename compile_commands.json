@@ -1,10 +1,8 @@
 [
   {
-    "file": "breakpoint.c",
+    "file": "src/breakpoint.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -13,23 +11,24 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "breakpoint.c",
+      "src/breakpoint.c",
       "-o",
-      "breakpoint.o"
+      "obj/breakpoint.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "breakpoint.o"
+    "output": "obj/breakpoint.o"
   },
   {
-    "file": "commands.c",
+    "file": "src/commands.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -38,23 +37,24 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "commands.c",
+      "src/commands.c",
       "-o",
-      "commands.o"
+      "obj/commands.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "commands.o"
+    "output": "obj/commands.o"
   },
   {
-    "file": "debugger.c",
+    "file": "src/debugger.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -63,23 +63,24 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "debugger.c",
+      "src/debugger.c",
       "-o",
-      "debugger.o"
+      "obj/debugger.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "debugger.o"
+    "output": "obj/debugger.o"
   },
   {
-    "file": "main.c",
+    "file": "src/hashmap.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -88,23 +89,24 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "main.c",
+      "src/hashmap.c",
       "-o",
-      "main.o"
+      "obj/hashmap.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "main.o"
+    "output": "obj/hashmap.o"
   },
   {
-    "file": "map.c",
+    "file": "src/main.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -113,23 +115,24 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "map.c",
+      "src/main.c",
       "-o",
-      "map.o"
+      "obj/main.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "map.o"
+    "output": "obj/main.o"
   },
   {
-    "file": "registers.c",
+    "file": "src/registers.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -138,23 +141,24 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "registers.c",
+      "src/registers.c",
       "-o",
-      "registers.o"
+      "obj/registers.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "registers.o"
+    "output": "obj/registers.o"
   },
   {
-    "file": "util.c",
+    "file": "src/util.c",
     "arguments": [
       "gcc",
-      "-g3",
-      "-O0",
       "-Wall",
       "-Wextra",
       "-Wpedantic",
@@ -163,15 +167,18 @@
       "-Wnull-dereference",
       "-Wsign-conversion",
       "-Wformat=2",
+      "-g3",
+      "-O0",
       "-fsanitize=address,undefined",
       "-fno-omit-frame-pointer",
       "-fstack-protector-strong",
+      "-Iinclude",
       "-c",
-      "util.c",
+      "src/util.c",
       "-o",
-      "util.o"
+      "obj/util.o"
     ],
     "directory": "/home/Vatsal/Codes/C/ptrace/vdbg",
-    "output": "util.o"
+    "output": "obj/util.o"
   }
 ]

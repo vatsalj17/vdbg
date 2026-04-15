@@ -1,18 +1,43 @@
 CC = gcc
-CFLAGS = -g3 -O0 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wnull-dereference -Wsign-conversion -Wformat=2
-CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
+CFLAGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wnull-dereference -Wsign-conversion -Wformat=2
 LDFLAGS = -lreadline -lelf -ldw
-TARGET = vdbg
-SRC = $(wildcard *.c)
-OBJ = $(SRC:.c=.o)
 
-all: $(TARGET)
+DEV_CFLAGS = $(CFLAGS) -g3 -O0 -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
+DEV_LDFLAGS = $(LDFLAGS) -fsanitize=address,undefined
+
+DEBUG_CFLAGS = $(DEV_CFLAGS) -DDEBUG
+
+BUILD_CFLAGS = $(CFLAGS) -O2 -s -fstack-protector-strong -fPIE
+BUILD_LDFLAGS = $(LDFLAGS) -pie -Wl,-z,relro,-z,now
+
+TARGET = vdbg
+SRC_DIR = src
+INC_DIR = include
+OBJ_DIR = obj
+
+SRC = $(wildcard $(SRC_DIR)/*.c)
+OBJ = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRC))
+
+all: ACTIVE_CFLAGS = $(DEV_CFLAGS)
+all: ACTIVE_LDFLAGS = $(DEV_LDFLAGS)
+all: $(OBJ_DIR) $(TARGET)
+
+debug: ACTIVE_CFLAGS = $(DEBUG_CFLAGS)
+debug: ACTIVE_LDFLAGS = $(DEV_LDFLAGS)
+debug: $(OBJ_DIR) $(TARGET)
+
+build: ACTIVE_CFLAGS = $(BUILD_CFLAGS)
+build: ACTIVE_LDFLAGS = $(BUILD_LDFLAGS)
+build: $(OBJ_DIR) $(TARGET)
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
 
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
+	$(CC) $(ACTIVE_CFLAGS) -o $@ $^ $(ACTIVE_LDFLAGS)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	$(CC) $(ACTIVE_CFLAGS) -I$(INC_DIR) -c $< -o $@
 
 clean:
-	rm -f $(TARGET) *.o
+	rm -rf $(TARGET) $(OBJ_DIR)

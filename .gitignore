@@ -3,3 +3,4 @@ vdbg
 *.out
 .cache
 seg
+*.txt

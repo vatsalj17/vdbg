@@ -108,3 +108,11 @@ void dump_registers(pid_t pid) {
 		       get_register_value(register_descriptors[i].r, pid));
 	}
 }
+
+long read_memory(pid_t pid, uintptr_t addr) {
+	return ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
+}
+
+void write_memory(pid_t pid, uintptr_t addr, uintptr_t value) {
+	ptrace(PTRACE_POKEDATA, pid, addr, value);
+}

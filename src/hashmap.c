@@ -1,4 +1,4 @@
-#include "map.h"
+#include "hashmap.h"
 
 #include <stdlib.h>
 #include <assert.h>
