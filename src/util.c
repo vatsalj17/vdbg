@@ -42,7 +42,7 @@ char **split(char *str, char delim) {
 	return tokens;
 }
 
-bool is_prefix(char *input, char *command) {
+bool is_prefix(const char *input, const char *command) {
 	if (!command || !input) return false;
 	// printf("is_prefix: command: %s, input: %s\n", command, input);
 	if (strncmp(command, input, strlen(command)) == 0) return true;

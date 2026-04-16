@@ -8,6 +8,8 @@
 
 #define INITIAL_CAPACITY 1024
 
+// TODO: changing the breakpoint system when i will add dwarf support
+
 typedef struct BreakPoint {
 	pid_t pid;
 	uintptr_t addr;

@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #define _GNU_SOURCE
 
 #include "debugger.h"
@@ -32,6 +33,8 @@ char **my_completion(const char *text, int start, int end __attribute__((unused)
 	}
 	return NULL;
 }
+
+// TODO: dwarf parsing
 
 typedef struct DBG {
 	char *process_name;           // the command
@@ -80,6 +83,10 @@ debugger *dbg_init(const char *pname) {
 // simple getter
 pid_t dbg_get_pid(debugger *dbg) {
 	return dbg->pid;
+}
+
+bool dbg_is_active(debugger *dbg) {
+    return (dbg->state == ACTIVE);
 }
 
 // to get the base address of dyn executable
@@ -228,6 +235,7 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
     breakpoint *bp = bp_init(dbg->pid, addr);
 
 	// i think i should enable the breakpoint after inserting
+    // instead of enabling before inserting
 	// so that it's clear that we aren't doing it twice
 	if (map_insert(dbg->breakpoints, addr, bp)) {
 		bp_enable(bp);
@@ -356,17 +364,6 @@ void continue_execution(debugger *dbg) {
 	// continue trapping signals
 	wait_for_signal(dbg);
 }
-
-// void reset_all_breakpoints(debugger *dbg) {
-// 	size_t i = 0;
-// 	uintptr_t addr;
-// 	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
-//         breakpoint *bp = map_lookup(dbg->breakpoints, addr);
-//         bp_set_pid(bp, dbg->pid);
-// 		// bp_disable(bp);
-// 		i++;
-// 	}
-// }
 
 void disable_all_breakpoints(debugger *dbg) {
 	size_t i = 0;
