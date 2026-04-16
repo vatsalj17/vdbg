@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #define _GNU_SOURCE
 
 #include "debugger.h"
@@ -138,7 +137,7 @@ void dbg_start(debugger *dbg) {
 	char *input;
 	// the cli infinite loop
 	while (1) {
-		if ((input = readline("vdbg> ")) != NULL) {
+		if ((input = readline("\033[1;32mvdbg> \033[0m")) != NULL) {
 			// avoid empty prompt
 			if (input[0] != '\0') {
 				add_history(input);
@@ -261,7 +260,7 @@ void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 		// putting the pc back where it should be
 		// -1 because execution will go past the breakpoint
 		set_pc(dbg->pid, get_pc(dbg->pid) - 1);
-		printf("Hit breakpoint at 0x%lx\n", get_pc(dbg->pid));
+		printf("Hit breakpoint at \033[0;31m0x%lx\033[0m\n", get_pc(dbg->pid));
 		// TODO: print source lines
 		return;
 	}
