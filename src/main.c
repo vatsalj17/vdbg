@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/personality.h>
 #include "debugger.h"
+#include "colors.h"
 
 int main(int argc, char **argv) {
 	if (argc != 2) {
@@ -11,20 +12,9 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	printf("Loaded %s ....\n", argv[1]);
+	printf(BHYEL "$$ " BHGRN "Loaded " BHWHT "%s" BHGRN " into the debugger..." CRESET "\n",
+	       argv[1]);
 	debugger *dbg = dbg_init(argv[1]);
 	dbg_start(dbg);
 	dbg_free(dbg);
-
-	// pid_t pid = fork();
-	// if (pid == 0) {
-	//     ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-	//     personality(ADDR_NO_RANDOMIZE);
-	//     execl(argv[1], argv[1], NULL);
-	// } else {
-	//     printf("Debugging %s ....\n", argv[1]);
-	//     debugger* dbg = dbg_init(argv[1], pid);
-	//     dbg_start(dbg);
-	//     dbg_free(dbg);
-	// }
 }

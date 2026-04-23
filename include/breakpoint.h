@@ -20,6 +20,7 @@ void bp_disable(breakpoint* bp);
 void bp_free(breakpoint* bp);
 bp_list *list_queue_init(void);
 void add_breakpoint_as_pending(bp_list *list, uintptr_t addr);
+void delete_breakpoing_from_pending(bp_list *list, uintptr_t addr);
 void list_free(bp_list *list);
 uintptr_t list_addr_by_index(bp_list *list, size_t index);
 void list_clear(bp_list *list);

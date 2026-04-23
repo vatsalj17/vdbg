@@ -2,10 +2,10 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wnull-dereference -Wsign-conversion -Wformat=2
 LDFLAGS = -lreadline -lelf -ldw
 
-DEV_CFLAGS = $(CFLAGS) -g3 -O0 -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
+DEV_CFLAGS = $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
 DEV_LDFLAGS = $(LDFLAGS) -fsanitize=address,undefined
 
-DEBUG_CFLAGS = $(DEV_CFLAGS) -DDEBUG
+DEBUG_CFLAGS = $(DEV_CFLAGS) -g3 -O0 -DDEBUG
 
 BUILD_CFLAGS = $(CFLAGS) -O2 -s -fstack-protector-strong -fPIE
 BUILD_LDFLAGS = $(LDFLAGS) -pie -Wl,-z,relro,-z,now

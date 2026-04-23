@@ -98,7 +98,7 @@ void *map_delete(map *ht, uintptr_t key) {
 void map_free(map *ht) {
 	if (ht == NULL) return;
 	for (size_t i = 0; i < ht->size; i++) {
-		while (ht->elements) {
+		while (ht->elements[i]) {
 			entry *temp = ht->elements[i];
 			if (temp == NULL) break;
 			ht->elements[i] = ht->elements[i]->next;

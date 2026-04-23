@@ -8,7 +8,8 @@
 
 char *command_generator(const char *text, int state) {
 	static unsigned long i, len;
-	static const char *commands[] = {"break", "continue", "register", "memory", "exit", "run", NULL};
+	static const char *commands[] = {
+	    "break", "delete", "continue", "register", "memory", "exit", "run", NULL};
 
 	if (!state) {
 		i = 0;

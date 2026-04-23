@@ -21,6 +21,7 @@
 #include "hashmap.h"
 #include "util.h"
 #include "breakpoint.h"
+#include "colors.h"
 
 #define MAP_SIZE 1024
 
@@ -85,7 +86,7 @@ pid_t dbg_get_pid(debugger *dbg) {
 }
 
 bool dbg_is_active(debugger *dbg) {
-    return (dbg->state == ACTIVE);
+	return (dbg->state == ACTIVE);
 }
 
 // to get the base address of dyn executable
@@ -137,7 +138,7 @@ void dbg_start(debugger *dbg) {
 	char *input;
 	// the cli infinite loop
 	while (1) {
-		if ((input = readline("\033[1;32mvdbg> \033[0m")) != NULL) {
+		if ((input = readline(HBLK "[" BHMAG "vdbg" HBLK "]" BHYEL "❯ " reset)) != NULL) {
 			// avoid empty prompt
 			if (input[0] != '\0') {
 				add_history(input);
@@ -156,8 +157,8 @@ void dbg_start(debugger *dbg) {
 
 void run(debugger *dbg) {
 	if (dbg->state == ACTIVE) {
-		char *ans = readline("Process is already being debugged.\n"
-		                     "Would you like to restart? (y/n) ");
+		char *ans = readline(BRED "!! " reset "Process is already being debugged.\n"
+		                          "   Would you like to restart? (y/n) ");
 		if (ans && ans[0] == 'y') {
 			ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
 			waitpid(dbg->pid, NULL, 0);
@@ -178,13 +179,41 @@ void run(debugger *dbg) {
 		personality(ADDR_NO_RANDOMIZE);
 		execl(dbg->process_name, dbg->process_name, NULL);
 	} else {
-		printf("Debugging %s ....\n", dbg->process_name);
+#ifdef DEBUG
+		printf("Running %s ....\n", dbg->process_name);
+#endif
 		dbg->pid = pid; // setting child's pid
 		wait_for_signal(dbg);
 		initialize_load_address(dbg);
 		dbg->state = ACTIVE;
 		resolve_pending_breakpoints(dbg);
-        continue_execution(dbg);
+		continue_execution(dbg);
+	}
+}
+
+void restart(debugger *dbg) {
+	ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
+	waitpid(dbg->pid, NULL, 0);
+	cleanup_at_tracee_death(dbg);
+#ifdef DEBUG
+	printf("DEBUG: this tracee is killed. new one is going to start\n");
+#endif
+
+	pid_t pid = fork();
+	if (pid == 0) {
+		ptrace(PTRACE_TRACEME, pid, NULL, NULL);
+		personality(ADDR_NO_RANDOMIZE);
+		execl(dbg->process_name, dbg->process_name, NULL);
+	} else {
+#ifdef DEBUG
+		printf("Running %s ....\n", dbg->process_name);
+#endif
+		dbg->pid = pid; // setting child's pid
+		wait_for_signal(dbg);
+		initialize_load_address(dbg);
+		dbg->state = ACTIVE;
+		resolve_pending_breakpoints(dbg);
+		continue_execution(dbg);
 	}
 }
 
@@ -209,13 +238,6 @@ void resolve_pending_breakpoints(debugger *dbg) {
 		}
 		i++;
 	}
-
-	// NOTE: i have to create a complete new system for breakpoints
-	// maybe making a vector to store all the breakpoints
-	// with proper crud operation so that no two breakpoints with same addresses confict
-	// every breakpoint should have it's numerical id
-
-	// list_clear(dbg->pending_breakpoints);
 }
 
 void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
@@ -224,17 +246,17 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 	// TODO: add support of breakpoints in pie
 
 	add_breakpoint_as_pending(dbg->pending_breakpoints, addr);
-    printf("Set breakpoint at addr 0x%lx ...\n", addr);
+	printf("Set breakpoint at addr " YEL "0x%lx" reset " ...\n", addr);
 
 	// program is not running
 	if (dbg->state == NOT_ACTIVE) {
 		return;
 	}
 
-    breakpoint *bp = bp_init(dbg->pid, addr);
+	breakpoint *bp = bp_init(dbg->pid, addr);
 
 	// i think i should enable the breakpoint after inserting
-    // instead of enabling before inserting
+	// instead of enabling before inserting
 	// so that it's clear that we aren't doing it twice
 	if (map_insert(dbg->breakpoints, addr, bp)) {
 		bp_enable(bp);
@@ -245,6 +267,37 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 #endif
 		bp_free(bp);
 	}
+}
+
+void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
+	breakpoint *found_bp = map_lookup(dbg->breakpoints, addr);
+	if (found_bp == NULL) {
+		fprintf(stderr, "No breakpoint found at addr: 0x%lx\n", addr);
+		return;
+	}
+#ifdef DEBUG
+	printf("DEBUG: Disabling breakpint at addr 0x%lx\n", addr);
+#endif
+	bp_disable(found_bp);
+	delete_breakpoing_from_pending(dbg->pending_breakpoints, addr);
+}
+
+void enable_breakpoint(debugger *dbg, uintptr_t addr) {
+	breakpoint *found_bp = map_lookup(dbg->breakpoints, addr);
+	if (found_bp == NULL) {
+		fprintf(stderr, "No breakpoint found at addr: 0x%lx\n", addr);
+		return;
+	}
+	bp_enable(found_bp);
+}
+
+void disable_breakpoint(debugger *dbg, uintptr_t addr) {
+	breakpoint *found_bp = map_lookup(dbg->breakpoints, addr);
+	if (found_bp == NULL) {
+		fprintf(stderr, "No breakpoint found at addr: 0x%lx\n", addr);
+		return;
+	}
+	bp_disable(found_bp);
 }
 
 void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
@@ -260,7 +313,7 @@ void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 		// putting the pc back where it should be
 		// -1 because execution will go past the breakpoint
 		set_pc(dbg->pid, get_pc(dbg->pid) - 1);
-		printf("Hit breakpoint at \033[0;31m0x%lx\033[0m\n", get_pc(dbg->pid));
+		printf("Hit breakpoint at " BRED "0x%lx\n" reset, get_pc(dbg->pid));
 		// TODO: print source lines
 		return;
 	}
@@ -377,7 +430,8 @@ void disable_all_breakpoints(debugger *dbg) {
 bool dbg_kill_tracee(debugger *dbg) {
 	// if the process is still running
 	if (dbg->state == ACTIVE && kill(dbg->pid, 0) == 0) {
-		char *ans = readline("The child process is still running. Kill it? (y/n) ");
+		char *ans =
+		    readline(BRED "!! " reset "The child process is still running. Kill it? (y/n) ");
 		if (ans && ans[0] == 'y') {
 			ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
 			waitpid(dbg->pid, NULL, 0);
@@ -397,6 +451,20 @@ bool dbg_kill_tracee(debugger *dbg) {
 void cleanup_at_tracee_death(debugger *dbg) {
 	disable_all_breakpoints(dbg);
 	dbg->state = NOT_ACTIVE;
+}
+
+void remove_all_breakpoints(debugger *dbg) {
+	size_t i = 0;
+	uintptr_t addr;
+	bool process_is_running = (kill(dbg->pid, 0) == 0);
+	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
+		breakpoint *bp = map_lookup(dbg->breakpoints, addr);
+		if (process_is_running) bp_disable(bp);
+		map_delete(dbg->breakpoints, addr);
+		i++;
+	}
+
+	list_clear(dbg->pending_breakpoints);
 }
 
 void dbg_free(debugger *dbg) {

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ptrace.h>
+#include "colors.h"
 
 typedef struct RegDescriptor {
 	reg r;
@@ -102,10 +103,25 @@ void set_pc(pid_t pid, uintptr_t value) {
 }
 
 void dump_registers(pid_t pid) {
+	printf(BWHT "%-11s %-19s %s\n" reset, "Register", "Hex", "Decimal");
 	for (int i = 0; i < REGISTERS_NUM; i++) {
-		printf("%-11s 0x%lx\n",
+		uint64_t val = get_register_value(register_descriptors[i].r, pid);
+		const char *col = (val == 0) ? HBLK : HCYN;
+
+		// highlight the important ones
+		if (strcmp(register_descriptors[i].name, "rip") == 0)
+			col = BHYEL;
+		else if (strcmp(register_descriptors[i].name, "rsp") == 0 ||
+		         strcmp(register_descriptors[i].name, "rbp") == 0)
+			col = BHGRN;
+		else if (strcmp(register_descriptors[i].name, "rflags") == 0)
+			col = BHMAG;
+
+		printf("%s%-12s" reset "0x%016lx  " HBLK "%lu\n" reset,
+		       col,
 		       register_descriptors[i].name,
-		       get_register_value(register_descriptors[i].r, pid));
+		       val,
+		       val);
 	}
 }
 

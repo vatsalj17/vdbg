@@ -20,12 +20,17 @@ bool dbg_kill_tracee(debugger *dbg);
 void dbg_free(debugger* dbg);
 
 void run(debugger *dbg);
+void restart(debugger *dbg);
 void set_breakpoint_at_addr(debugger* dbg, uintptr_t addr);
+void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr);
+void enable_breakpoint(debugger *dbg, uintptr_t addr);
+void disable_breakpoint(debugger *dbg, uintptr_t addr);
 void resolve_pending_breakpoints(debugger *dbg) ;
 void wait_for_signal(debugger* dbg);
 void step_over_breakpoint(debugger* dbg);
 void continue_execution(debugger* dbg);
 void disable_all_breakpoints(debugger *dbg);
 void cleanup_at_tracee_death(debugger *dbg);
+void remove_all_breakpoints(debugger *dbg);
 
 #endif
