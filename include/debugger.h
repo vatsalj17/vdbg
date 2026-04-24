@@ -21,6 +21,7 @@ void dbg_free(debugger* dbg);
 
 void run(debugger *dbg);
 void restart(debugger *dbg);
+void add_arguments_for_tracee(debugger *dbg, char **args);
 void set_breakpoint_at_addr(debugger* dbg, uintptr_t addr);
 void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr);
 void enable_breakpoint(debugger *dbg, uintptr_t addr);

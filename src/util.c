@@ -9,7 +9,20 @@
 char *command_generator(const char *text, int state) {
 	static unsigned long i, len;
 	static const char *commands[] = {
-	    "break", "delete", "continue", "register", "memory", "exit", "run", NULL};
+	    "enable",
+	    "break",
+	    "delete",
+	    "continue",
+	    "register",
+	    "memory",
+	    "exit",
+	    "run",
+	    "disable",
+	    "clear",
+	    "restart",
+        "arguments",
+	    NULL,
+	};
 
 	if (!state) {
 		i = 0;

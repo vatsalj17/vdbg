@@ -24,6 +24,7 @@
 #include "colors.h"
 
 #define MAP_SIZE 1024
+#define MAX_ARGS 50
 
 // enabling tab completion support for speed
 char **my_completion(const char *text, int start, int end __attribute__((unused))) {
@@ -38,6 +39,7 @@ char **my_completion(const char *text, int start, int end __attribute__((unused)
 
 typedef struct DBG {
 	char *process_name;           // the command
+	char **args;                  // arguments of the tracee
 	pid_t pid;                    // obvious
 	state state;                  // tracking the state of debugger
 	map *breakpoints;             // hashtable of breakpoints
@@ -61,6 +63,8 @@ debugger *dbg_init(const char *pname) {
 
 	new->pid = 0;
 	new->process_name = strdup(pname);
+    new->args = calloc(MAX_ARGS, sizeof(char *));
+    new->args[0] = new->process_name;
 	new->state = NOT_ACTIVE;
 	new->breakpoints = map_init(MAP_SIZE, bp_free);
 	new->pending_breakpoints = list_queue_init();
@@ -90,7 +94,7 @@ bool dbg_is_active(debugger *dbg) {
 }
 
 // to get the base address of dyn executable
-void initialize_load_address(debugger *dbg) {
+static void initialize_load_address(debugger *dbg) {
 	Elf64_Ehdr *header = elf64_getehdr(dbg->elf_data);
 	if (header->e_type == ET_DYN) {
 		char path[100];
@@ -131,6 +135,25 @@ uintptr_t offset_load_address(debugger *dbg, uintptr_t addr) {
 	return addr - dbg->load_address;
 }
 
+void add_arguments_for_tracee(debugger *dbg, char **args) {
+    int i = 1;
+    while (dbg->args[i] != NULL) { 
+        free(dbg->args[i]);
+        dbg->args[i] = NULL;
+        i++;
+    }
+    i = 0;
+    int count = 1;
+    while (args[i] != NULL) {
+        char *str = strdup(args[i]);
+        dbg->args[count++] = str;
+        i++;
+    }
+#ifdef DEBUG 
+    printf("DEBUG: added %d arguments\n", i);
+#endif
+}
+
 void dbg_start(debugger *dbg) {
 	// setting up my own commands for completion
 	rl_attempted_completion_function = my_completion;
@@ -155,34 +178,26 @@ void dbg_start(debugger *dbg) {
 	}
 }
 
-void run(debugger *dbg) {
-	if (dbg->state == ACTIVE) {
-		char *ans = readline(BRED "!! " reset "Process is already being debugged.\n"
-		                          "   Would you like to restart? (y/n) ");
-		if (ans && ans[0] == 'y') {
-			ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
-			waitpid(dbg->pid, NULL, 0);
-			cleanup_at_tracee_death(dbg);
+static void kill_tracee(debugger *dbg) {
+	ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
+	waitpid(dbg->pid, NULL, 0);
+	cleanup_at_tracee_death(dbg);
 #ifdef DEBUG
-			printf("DEBUG: this tracee is killed. new one is going to start\n");
+	printf("DEBUG: this tracee is killed. new one is going to start\n");
 #endif
-		} else {
-			free(ans);
-			return;
-		}
-		free(ans);
-	}
+}
 
+static void spawn_tracee(debugger *dbg) {
 	pid_t pid = fork();
 	if (pid == 0) {
 		ptrace(PTRACE_TRACEME, pid, NULL, NULL);
 		personality(ADDR_NO_RANDOMIZE);
-		execl(dbg->process_name, dbg->process_name, NULL);
+		execv(dbg->process_name, dbg->args);
 	} else {
 #ifdef DEBUG
 		printf("Running %s ....\n", dbg->process_name);
 #endif
-		dbg->pid = pid; // setting child's pid
+		dbg->pid = pid;
 		wait_for_signal(dbg);
 		initialize_load_address(dbg);
 		dbg->state = ACTIVE;
@@ -191,30 +206,25 @@ void run(debugger *dbg) {
 	}
 }
 
-void restart(debugger *dbg) {
-	ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
-	waitpid(dbg->pid, NULL, 0);
-	cleanup_at_tracee_death(dbg);
-#ifdef DEBUG
-	printf("DEBUG: this tracee is killed. new one is going to start\n");
-#endif
-
-	pid_t pid = fork();
-	if (pid == 0) {
-		ptrace(PTRACE_TRACEME, pid, NULL, NULL);
-		personality(ADDR_NO_RANDOMIZE);
-		execl(dbg->process_name, dbg->process_name, NULL);
-	} else {
-#ifdef DEBUG
-		printf("Running %s ....\n", dbg->process_name);
-#endif
-		dbg->pid = pid; // setting child's pid
-		wait_for_signal(dbg);
-		initialize_load_address(dbg);
-		dbg->state = ACTIVE;
-		resolve_pending_breakpoints(dbg);
-		continue_execution(dbg);
+void run(debugger *dbg) {
+	if (dbg->state == ACTIVE) {
+		char *ans = readline(BRED "!! " reset "Process is already being debugged.\n"
+		                          "   Would you like to restart? (y/n) ");
+		if (ans && ans[0] == 'y') {
+			kill_tracee(dbg);
+		} else {
+			free(ans);
+			return;
+		}
+		free(ans);
 	}
+
+	spawn_tracee(dbg);
+}
+
+void restart(debugger *dbg) {
+	kill_tracee(dbg);
+	spawn_tracee(dbg);
 }
 
 void resolve_pending_breakpoints(debugger *dbg) {
@@ -300,7 +310,7 @@ void disable_breakpoint(debugger *dbg, uintptr_t addr) {
 	bp_disable(found_bp);
 }
 
-void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
+static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 	switch (siginfo.si_code) {
 	case 0:
 		// wierd behaviour encountered
@@ -327,7 +337,7 @@ void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 	}
 }
 
-siginfo_t get_signal_info(debugger *dbg) {
+static siginfo_t get_signal_info(debugger *dbg) {
 	siginfo_t info;
 	if (ptrace(PTRACE_GETSIGINFO, dbg->pid, NULL, &info) == -1) {
 		perror("get_signal_info");
@@ -433,9 +443,7 @@ bool dbg_kill_tracee(debugger *dbg) {
 		char *ans =
 		    readline(BRED "!! " reset "The child process is still running. Kill it? (y/n) ");
 		if (ans && ans[0] == 'y') {
-			ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
-			waitpid(dbg->pid, NULL, 0);
-			cleanup_at_tracee_death(dbg);
+			kill_tracee(dbg);
 		} else {
 			free(ans);
 			// if no then don't kill the process
@@ -475,6 +483,8 @@ void dbg_free(debugger *dbg) {
 	close(dbg->file_descriptor);
 	map_free(dbg->breakpoints);
 	list_free(dbg->pending_breakpoints);
+    for (int i = 1; dbg->args[i] != NULL; i++) free(dbg->args[i]);
 	free(dbg->process_name);
+    free(dbg->args);
 	free(dbg);
 }

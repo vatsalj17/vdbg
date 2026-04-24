@@ -47,7 +47,6 @@ Start the debugger by passing an executable:
 * `memory read <addr>` / `memory write <addr> <val>` - Manipulate raw memory.
 * `help` - Show the interactive command menu.
 
-## Future Work
+## Working On
 * PIE / ASLR support
-* Better breakpoint management (IDs, deletion, enable/disable)
 * Source-level debugging (DWARF)
