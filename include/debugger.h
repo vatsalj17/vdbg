@@ -15,6 +15,7 @@ typedef enum Debugger_State {
 debugger* dbg_init(const char* pname);
 void dbg_start(debugger* dbg);
 pid_t dbg_get_pid(debugger* dbg);
+uintptr_t dbg_get_load_address(debugger *dbg);
 bool dbg_is_active(debugger *dbg);
 bool dbg_kill_tracee(debugger *dbg);
 void dbg_free(debugger* dbg);
@@ -33,5 +34,6 @@ void continue_execution(debugger* dbg);
 void disable_all_breakpoints(debugger *dbg);
 void cleanup_at_tracee_death(debugger *dbg);
 void remove_all_breakpoints(debugger *dbg);
+uintptr_t offset_load_address(debugger *dbg, uintptr_t addr);
 
 #endif

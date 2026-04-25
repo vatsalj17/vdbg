@@ -20,10 +20,6 @@ static size_t map_index(map *ht, uintptr_t key) {
 	return result;
 }
 
-uintptr_t get_key(entry *e) {
-	return e->key;
-}
-
 map *map_init(uint32_t size, cleanupfunction *cf) {
 	map *ht = malloc(sizeof(map));
 	ht->size = size;
@@ -74,8 +70,8 @@ bool map_it_exsists(map *ht, uintptr_t key) {
 	return true;
 }
 
-void *map_delete(map *ht, uintptr_t key) {
-	if (ht == NULL) return false;
+void map_delete(map *ht, uintptr_t key) {
+	if (ht == NULL) return;
 	size_t index = map_index(ht, key);
 	entry *temp = ht->elements[index];
 	entry *prev = NULL;
@@ -83,16 +79,15 @@ void *map_delete(map *ht, uintptr_t key) {
 		prev = temp;
 		temp = temp->next;
 	}
-	if (temp == NULL) return NULL;
+	if (temp == NULL) return;
 	if (prev == NULL) {
 		// deleting the head node
 		ht->elements[index] = temp->next;
 	} else {
 		prev->next = temp->next;
 	}
-	void *result = temp->obj;
+	ht->cf(temp->obj);
 	free(temp);
-	return result;
 }
 
 void map_free(map *ht) {
@@ -110,4 +105,3 @@ void map_free(map *ht) {
 	free(ht->elements);
 	free(ht);
 }
-

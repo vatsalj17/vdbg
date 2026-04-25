@@ -40,27 +40,28 @@ void list_free(bp_list *list) {
 }
 
 void add_breakpoint_as_pending(bp_list *list, uintptr_t addr) {
-    if (list->no_of_bp == list->capacity) {
-        size_t new_cap = (size_t)((double)list->capacity * 1.7);
-        uintptr_t* new_list = realloc(list->bps, new_cap * sizeof(uintptr_t));
-        if (new_list == NULL) {
-            printf("breakpoints list is full\n");
-            return;
-        }
-        list->bps = new_list;
-        list->capacity = new_cap;
-    }
+	if (list->no_of_bp == list->capacity) {
+		size_t new_cap = (size_t)((double)list->capacity * 1.7);
+		uintptr_t *new_list = realloc(list->bps, new_cap * sizeof(uintptr_t));
+		if (new_list == NULL) {
+			printf("breakpoints list is full\n");
+			return;
+		}
+		list->bps = new_list;
+		list->capacity = new_cap;
+	}
 	list->bps[list->no_of_bp++] = addr;
 }
 
-void delete_breakpoing_from_pending(bp_list *list, uintptr_t addr) {
+void delete_breakpoint_from_pending(bp_list *list, uintptr_t addr) {
 	for (size_t i = 0; i < list->no_of_bp; i++) {
 		if (addr == list->bps[i]) {
-			void *dest = (uintptr_t*)list->bps + i;
-			void *src = (uintptr_t*)list->bps + i + 1;
-			size_t bytes_to_move = (list->no_of_bp - i) * sizeof(uintptr_t);
-            memmove(dest, src, bytes_to_move);
-            list->no_of_bp--;
+			void *dest = (uintptr_t *)list->bps + i;
+			void *src = (uintptr_t *)list->bps + i + 1;
+			size_t bytes_to_move = (list->no_of_bp - i - 1) * sizeof(uintptr_t);
+			memmove(dest, src, bytes_to_move);
+			list->no_of_bp--;
+			return;
 		}
 	}
 }
@@ -75,6 +76,9 @@ void list_clear(bp_list *list) {
 }
 
 breakpoint *bp_init(pid_t pid, uintptr_t addr) {
+	// #ifdef DEBUG
+	// 	printf("DEBUG: Intializing breakpoint at 0x%lx\n", addr);
+	// #endif
 	breakpoint *new = malloc(sizeof(breakpoint));
 	new->pid = pid;
 	new->addr = addr;
@@ -110,9 +114,11 @@ void bp_enable(breakpoint *bp) {
 	long data_with_int3 = (data & ~0xff) | int3;
 	errno = 0;
 	ptrace(PTRACE_POKEDATA, bp->pid, bp->addr, data_with_int3);
+#ifdef DEBUG
 	if (errno != 0) {
 		perror("ERROR: bp_enable: ptrace");
 	}
+#endif
 	bp->enabled = true;
 }
 
@@ -121,10 +127,10 @@ void bp_disable(breakpoint *bp) {
 #ifdef DEBUG
 	printf("DEBUG: bp_disable called for addr: 0x%lx\n", bp->addr);
 #endif
-    if (kill(bp->pid, 0) != 0) {
-        bp->enabled = false;
-        return;
-    }
+	if (kill(bp->pid, 0) != 0) {
+		bp->enabled = false;
+		return;
+	}
 	long data = ptrace(PTRACE_PEEKDATA, bp->pid, bp->addr, NULL);
 	long restored_data = (data & ~0xff) | bp->saved_data;
 	errno = 0;

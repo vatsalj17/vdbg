@@ -20,7 +20,7 @@ char *command_generator(const char *text, int state) {
 	    "disable",
 	    "clear",
 	    "restart",
-        "arguments",
+	    "arguments",
 	    NULL,
 	};
 
@@ -41,8 +41,7 @@ char *command_generator(const char *text, int state) {
 
 char **split(char *str, char delim) {
 	char **tokens = calloc(BUFSIZE, sizeof(char *));
-	char *delimiter = malloc(2);
-	snprintf(delimiter, 2, "%c", delim);
+	char *delimiter = (char[]){delim, '\0'};
 	char *token = strtok(str, delimiter);
 	int count = 0;
 	while (token != NULL) {
@@ -52,7 +51,6 @@ char **split(char *str, char delim) {
 	// for (int i = 0; tokens[i] != NULL; i++) {
 	//     printf("%s\n", tokens[i]);
 	// }
-	free(delimiter);
 	return tokens;
 }
 

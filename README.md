@@ -1,52 +1,56 @@
 # vdbg
-
-A custom, lightweight Linux debugger built from scratch in C using `ptrace`. 
+A custom, lightweight Linux debugger built from scratch in C using `ptrace`.
 
 ## Features (Current State)
-* **Execution Control:** Spawns and attaches to a tracee using `ptrace`.
-* **Hardware Breakpoints:** Manual `int 3` (`0xcc`) instruction injection and original byte restoration.
-* **Register Manipulation:** Read, write, and dump x86_64 CPU registers.
+* **Execution Control:** Spawns, attaches to, restarts, and kills a tracee using `ptrace`.
+* **Software Breakpoints:** Manual `int 3` (`0xcc`) injection with original byte restoration. Supports set, delete, enable, disable, and clear operations.
+* **Pending Breakpoints:** Breakpoints set before `run` are queued and resolved automatically on spawn.
+* **Register Manipulation:** Read, write, and dump all x86_64 CPU registers.
 * **Memory Inspection:** Peek and poke raw memory addresses.
-* **Dynamic Executable Support:** Calculates base load addresses by parsing `/proc/<pid>/maps` to support PIE binaries.
+* **PIE / ASLR Support:** Calculates base load addresses by parsing `/proc/<pid>/maps` and offsets all breakpoint addresses accordingly.
+* **Tracee Arguments:** Pass arbitrary arguments to the tracee before launch via the `arguments` command.
+* **Tab Completion:** readline-backed command completion.
 
 ## Under the Hood
-This project avoids monolithic design in favor of strict, system-level modularity:
-* **The Engine (`debugger.c`):** Acts as a state machine, catching signals (like `SIGTRAP` and `SIGSEGV`) and routing execution control.
-* **State Management (`hashmap.c`):** Uses a custom, generic hash table to track breakpoint state in memory
-* **Clean Abstraction:** Hardware/OS specifics (`user_regs_struct` offsets, `PTRACE_POKEDATA`) are hidden behind isolated APIs (`registers.c`, `breakpoint.c`).
+* **The Engine (`debugger.c`):** Acts as a state machine, catching signals (`SIGTRAP`, `SIGSEGV`) and routing execution control.
+* **State Management (`hashmap.c`):** Custom hash table to track active breakpoint state; a separate pending list handles pre-run breakpoints.
+* **Clean Abstraction:** OS/hardware specifics (`user_regs_struct` offsets, `PTRACE_POKEDATA`) are hidden behind isolated APIs (`registers.c`, `breakpoint.c`).
 
-## Build Instructions
-
+## Build
 Requires `gcc`, `make`, `libreadline`, and `elfutils`.
-
 ```bash
 git clone https://github.com/vatsalj17/vdbg.git
 cd vdbg
-
-# Build the development version (with ASan/UBSan)
-make
-
-# Or build the release version (hardened with PIE, relro, now)
-make build
+make          # dev build (ASan + UBSan)
+make build    # release build (PIE, relro, now)
+make debug    # debug build (symbols + -DDEBUG)
 ```
 
 ## Usage
-
-Start the debugger by passing an executable:
-
 ```bash
 ./vdbg <executable>
 ```
 
-### Supported Commands
-* `run` - Start the tracee.
-* `break <address>` - Set a breakpoint at a hex address.
-* `continue` - Resume execution until the next trap.
-* `register read <reg>` / `register write <reg> <val>` - Manipulate CPU registers.
-* `register dump` - Dump all x86_64 register states.
-* `memory read <addr>` / `memory write <addr> <val>` - Manipulate raw memory.
-* `help` - Show the interactive command menu.
+
+| Command | Description |
+|---|---|
+| `run` | Start the tracee |
+| `restart` | Kill and relaunch the tracee |
+| `arguments <arg...>` | Set arguments to pass to the tracee |
+| `break <addr>` | Set a breakpoint at a hex address |
+| `delete <addr>` | Remove a breakpoint |
+| `enable <addr>` | Re-enable a disabled breakpoint |
+| `disable <addr>` | Disable a breakpoint without removing it |
+| `clear` | Remove all breakpoints |
+| `continue` | Resume execution |
+| `register dump` | Dump all x86_64 register states |
+| `register read <reg>` | Read a register value |
+| `register write <reg> <val>` | Write a register value |
+| `memory read <addr>` | Read 8 bytes at address |
+| `memory write <addr> <val>` | Write a value to address |
+| `help` | Show command menu |
+| `exit` | Exit the debugger |
+
 
 ## Working On
-* PIE / ASLR support
 * Source-level debugging (DWARF)

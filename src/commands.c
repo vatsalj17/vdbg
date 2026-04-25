@@ -47,8 +47,6 @@ void cmd_clear(debugger *dbg, char **args __attribute__((unused))) {
 	remove_all_breakpoints(dbg);
 }
 
-// TODO: add argument support
-
 void cmd_run(debugger *dbg, char **args __attribute__((unused))) {
 	run(dbg);
 }
@@ -94,11 +92,13 @@ void cmd_delete(debugger *dbg, char **args) {
 
 void cmd_enable(debugger *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
+    addr += dbg_get_load_address(dbg);
 	enable_breakpoint(dbg, addr);
 }
 
 void cmd_disable(debugger *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
+    addr += dbg_get_load_address(dbg);
 	disable_breakpoint(dbg, addr);
 }
 

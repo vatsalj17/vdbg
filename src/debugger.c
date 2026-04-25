@@ -45,7 +45,7 @@ typedef struct DBG {
 	map *breakpoints;             // hashtable of breakpoints
 	bp_list *pending_breakpoints; // list of pending breakpoints
 	uintptr_t load_address;       // to be calc the offset in dyn executable
-	int pendig_signal;            // for that irritating SIGSEGV only currently
+	int pending_signal;           // for that irritating SIGSEGV only currently
 	int file_descriptor;          // file opened to map in libelf
 	Elf *elf_data;                // elf stuffs
 	Dwfl *dwarf_data;             // unused yet, for future purpose
@@ -63,12 +63,12 @@ debugger *dbg_init(const char *pname) {
 
 	new->pid = 0;
 	new->process_name = strdup(pname);
-    new->args = calloc(MAX_ARGS, sizeof(char *));
-    new->args[0] = new->process_name;
+	new->args = calloc(MAX_ARGS, sizeof(char *));
+	new->args[0] = new->process_name;
 	new->state = NOT_ACTIVE;
 	new->breakpoints = map_init(MAP_SIZE, bp_free);
 	new->pending_breakpoints = list_queue_init();
-	new->pendig_signal = 0;
+	new->pending_signal = 0;
 	new->file_descriptor = open(new->process_name, O_RDONLY);
 	if (new->file_descriptor == -1) {
 		perror("open");
@@ -89,6 +89,10 @@ pid_t dbg_get_pid(debugger *dbg) {
 	return dbg->pid;
 }
 
+uintptr_t dbg_get_load_address(debugger *dbg) {
+	return dbg->load_address;
+}
+
 bool dbg_is_active(debugger *dbg) {
 	return (dbg->state == ACTIVE);
 }
@@ -100,30 +104,24 @@ static void initialize_load_address(debugger *dbg) {
 		char path[100];
 		snprintf(path, sizeof(path), "/proc/%d/maps", dbg->pid);
 		FILE *file = fopen(path, "r");
+		if (!file) abort();
 		char *line = NULL;
 		size_t len = 0;
 		uintptr_t addr = 0;
 
-		while (getline(&line, &len, file) != 0) {
+		while (getline(&line, &len, file) != -1) {
 			uintptr_t start_addr, end_addr;
-			char perm[5];
-			char executable_path[256] = {0};
-			int parsed = sscanf(line,
-			                    "%lx-%lx %4s %*x %*s %*d %255s",
-			                    &start_addr,
-			                    &end_addr,
-			                    perm,
-			                    executable_path);
-			// if all of them are parsed correctly
-			if (parsed == 4) {
-				// r-xp
-				if (perm[0] == 'r' && perm[2] == 'x') {
-					addr = start_addr;
-					break;
-				}
+			int parsed = sscanf(line, "%lx-%lx %*s %*x %*s %*d %*s", &start_addr, &end_addr);
+			// if it's parsed correctly
+			if (parsed == 2) {
+				addr = start_addr;
+				break;
 			}
 		}
 		if (addr != 0) {
+#ifdef DEBUG
+			printf("DEBUG: load_address initialized with 0x%lx\n", addr);
+#endif
 			dbg->load_address = addr;
 		}
 		free(line);
@@ -136,21 +134,21 @@ uintptr_t offset_load_address(debugger *dbg, uintptr_t addr) {
 }
 
 void add_arguments_for_tracee(debugger *dbg, char **args) {
-    int i = 1;
-    while (dbg->args[i] != NULL) { 
-        free(dbg->args[i]);
-        dbg->args[i] = NULL;
-        i++;
-    }
-    i = 0;
-    int count = 1;
-    while (args[i] != NULL) {
-        char *str = strdup(args[i]);
-        dbg->args[count++] = str;
-        i++;
-    }
-#ifdef DEBUG 
-    printf("DEBUG: added %d arguments\n", i);
+	int i = 1;
+	while (dbg->args[i] != NULL) {
+		free(dbg->args[i]);
+		dbg->args[i] = NULL;
+		i++;
+	}
+	i = 0;
+	int count = 1;
+	while (args[i] != NULL) {
+		char *str = strdup(args[i]);
+		dbg->args[count++] = str;
+		i++;
+	}
+#ifdef DEBUG
+	printf("DEBUG: added %d arguments\n", i);
 #endif
 }
 
@@ -228,9 +226,16 @@ void restart(debugger *dbg) {
 }
 
 void resolve_pending_breakpoints(debugger *dbg) {
+#ifdef DEBUG
+	printf("DEBUG: resolving all the breakpoints in the list\n");
+#endif
 	size_t i = 0;
 	uintptr_t addr;
 	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
+		addr += dbg->load_address;
+#ifdef DEBUG
+		printf("DEBUG: resolving 0x%lx\n", addr);
+#endif
 		if (map_it_exsists(dbg->breakpoints, addr)) {
 			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
 			bp_enable(map_lookup(dbg->breakpoints, addr));
@@ -253,8 +258,6 @@ void resolve_pending_breakpoints(debugger *dbg) {
 void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 	// not calling this function during resolution of breakpoints
 
-	// TODO: add support of breakpoints in pie
-
 	add_breakpoint_as_pending(dbg->pending_breakpoints, addr);
 	printf("Set breakpoint at addr " YEL "0x%lx" reset " ...\n", addr);
 
@@ -262,6 +265,8 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 	if (dbg->state == NOT_ACTIVE) {
 		return;
 	}
+
+	addr += dbg->load_address; // adding the offset fo pie
 
 	breakpoint *bp = bp_init(dbg->pid, addr);
 
@@ -280,7 +285,8 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 }
 
 void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
-	breakpoint *found_bp = map_lookup(dbg->breakpoints, addr);
+	uintptr_t actual_addr = addr + dbg->load_address;
+	breakpoint *found_bp = map_lookup(dbg->breakpoints, actual_addr);
 	if (found_bp == NULL) {
 		fprintf(stderr, "No breakpoint found at addr: 0x%lx\n", addr);
 		return;
@@ -289,7 +295,7 @@ void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 	printf("DEBUG: Disabling breakpint at addr 0x%lx\n", addr);
 #endif
 	bp_disable(found_bp);
-	delete_breakpoing_from_pending(dbg->pending_breakpoints, addr);
+	delete_breakpoint_from_pending(dbg->pending_breakpoints, addr);
 }
 
 void enable_breakpoint(debugger *dbg, uintptr_t addr) {
@@ -323,7 +329,8 @@ static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 		// putting the pc back where it should be
 		// -1 because execution will go past the breakpoint
 		set_pc(dbg->pid, get_pc(dbg->pid) - 1);
-		printf("Hit breakpoint at " BRED "0x%lx\n" reset, get_pc(dbg->pid));
+		printf("Hit breakpoint at " BRED "0x%lx\n" reset,
+		       offset_load_address(dbg, get_pc(dbg->pid)));
 		// TODO: print source lines
 		return;
 	}
@@ -377,7 +384,7 @@ void wait_for_signal(debugger *dbg) {
 	case SIGSEGV: {
 		printf("Caught Segfault! Reason code: %d\n", siginfo.si_code);
 		// saving the signal to pass it to the tracee
-		dbg->pendig_signal = siginfo.si_signo;
+		dbg->pending_signal = siginfo.si_signo;
 		break;
 	}
 
@@ -419,8 +426,8 @@ void continue_execution(debugger *dbg) {
 	step_over_breakpoint(dbg);
 
 	// getting a signal to send to tracee
-	int sig = dbg->pendig_signal;
-	dbg->pendig_signal = 0; // reset
+	int sig = dbg->pending_signal;
+	dbg->pending_signal = 0; // reset
 	ptrace(PTRACE_CONT, dbg->pid, NULL, sig);
 
 	// continue trapping signals
@@ -431,6 +438,7 @@ void disable_all_breakpoints(debugger *dbg) {
 	size_t i = 0;
 	uintptr_t addr;
 	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
+		addr += dbg->load_address;
 		breakpoint *bp = map_lookup(dbg->breakpoints, addr);
 		bp_disable(bp);
 		i++;
@@ -457,8 +465,10 @@ bool dbg_kill_tracee(debugger *dbg) {
 }
 
 void cleanup_at_tracee_death(debugger *dbg) {
-	disable_all_breakpoints(dbg);
+	// disabling all breakpoints so that next time when it runs
+	// i can enable it all
 	dbg->state = NOT_ACTIVE;
+	disable_all_breakpoints(dbg);
 }
 
 void remove_all_breakpoints(debugger *dbg) {
@@ -466,6 +476,7 @@ void remove_all_breakpoints(debugger *dbg) {
 	uintptr_t addr;
 	bool process_is_running = (kill(dbg->pid, 0) == 0);
 	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
+		addr += dbg->load_address;
 		breakpoint *bp = map_lookup(dbg->breakpoints, addr);
 		if (process_is_running) bp_disable(bp);
 		map_delete(dbg->breakpoints, addr);
@@ -483,8 +494,9 @@ void dbg_free(debugger *dbg) {
 	close(dbg->file_descriptor);
 	map_free(dbg->breakpoints);
 	list_free(dbg->pending_breakpoints);
-    for (int i = 1; dbg->args[i] != NULL; i++) free(dbg->args[i]);
+	for (int i = 1; dbg->args[i] != NULL; i++)
+		free(dbg->args[i]);
 	free(dbg->process_name);
-    free(dbg->args);
+	free(dbg->args);
 	free(dbg);
 }
