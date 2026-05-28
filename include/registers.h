@@ -49,6 +49,6 @@ void dump_registers(pid_t pid);
 uintptr_t get_pc(pid_t pid);
 void set_pc(pid_t pid, uintptr_t value);
 void write_memory(pid_t pid, uintptr_t addr, uintptr_t value);
-long read_memory(pid_t pid, uintptr_t addr);
+uint64_t read_memory(pid_t pid, uintptr_t addr);
 
 #endif

@@ -7,5 +7,6 @@ char *command_generator(const char *text, int state);
 char **split(char *str, char delim);
 bool is_prefix(const char *input, const char *command);
 void print_source(const char *file_name, unsigned line, unsigned lines_context);
+char *str_sigsegv_code(int si_code);
 
 #endif

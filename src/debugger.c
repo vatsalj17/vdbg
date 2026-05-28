@@ -2,6 +2,7 @@
 
 #include "debugger.h"
 
+#include <assert.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -26,6 +27,13 @@
 #define MAP_SIZE 1024
 #define MAX_ARGS 50
 
+// for initializing dwfl
+static const Dwfl_Callbacks callbacks = {
+    .find_elf = dwfl_linux_proc_find_elf,
+    .find_debuginfo = dwfl_standard_find_debuginfo,
+    .debuginfo_path = NULL,
+};
+
 // enabling tab completion support for speed
 char **my_completion(const char *text, int start, int end __attribute__((unused))) {
 	rl_attempted_completion_over = 1;
@@ -41,14 +49,14 @@ typedef struct DBG {
 	char *process_name;           // the command
 	char **args;                  // arguments of the tracee
 	pid_t pid;                    // obvious
-	state state;                  // tracking the state of debugger
+	dbg_state state;              // tracking the state of debugger
 	map *breakpoints;             // hashtable of breakpoints
 	bp_list *pending_breakpoints; // list of pending breakpoints
 	uintptr_t load_address;       // to be calc the offset in dyn executable
 	int pending_signal;           // for that irritating SIGSEGV only currently
 	int file_descriptor;          // file opened to map in libelf
 	Elf *elf_data;                // elf stuffs
-	Dwfl *dwarf_data;             // unused yet, for future purpose
+	Dwfl *dwarf_data;             // dwarf parsing
 } debugger;
 
 debugger *dbg_init(const char *pname) {
@@ -57,9 +65,6 @@ debugger *dbg_init(const char *pname) {
 		perror("dbg_init");
 		exit(EXIT_FAILURE);
 	}
-	int err = 0; // because i wan't to see what libelf is doing
-
-	elf_version(EV_CURRENT); // necessary because libelf just won't work
 
 	new->pid = 0;
 	new->process_name = strdup(pname);
@@ -69,17 +74,25 @@ debugger *dbg_init(const char *pname) {
 	new->breakpoints = map_init(MAP_SIZE, bp_free);
 	new->pending_breakpoints = list_queue_init();
 	new->pending_signal = 0;
+	new->load_address = 0; // initialized for static files initially
 	new->file_descriptor = open(new->process_name, O_RDONLY);
 	if (new->file_descriptor == -1) {
 		perror("open");
 		abort();
 	}
+
+	elf_version(EV_CURRENT); // necessary because libelf just won't work
 	new->elf_data = elf_begin(new->file_descriptor, ELF_C_READ_MMAP, NULL);
 	if (new->elf_data == NULL) {
-		printf("elf_begin: %s\n", elf_errmsg(err));
+		printf("elf_begin: %s\n", elf_errmsg(elf_errno()));
 		abort();
 	}
-	new->load_address = 0; // initialized for static files initially
+
+	new->dwarf_data = dwfl_begin(&callbacks);
+	if (new->dwarf_data == NULL) {
+		printf("dwfl_begin: %s\n", dwfl_errmsg(dwfl_errno()));
+		abort();
+	}
 
 	return new;
 }
@@ -95,6 +108,52 @@ uintptr_t dbg_get_load_address(debugger *dbg) {
 
 bool dbg_is_active(debugger *dbg) {
 	return (dbg->state == ACTIVE);
+}
+
+// to setting up dwfl to read modules later on in the code
+void setup_dwfl(debugger *dbg) {
+	if (dwfl_linux_proc_report(dbg->dwarf_data, dbg->pid) != 0) {
+		fprintf(stderr, "dwfl_linux_proc_report: %s\n", dwfl_errmsg(-1));
+		dwfl_end(dbg->dwarf_data);
+		ptrace(PTRACE_CONT, dbg->pid, NULL, NULL);
+	}
+	dwfl_report_end(dbg->dwarf_data, NULL, NULL);
+}
+
+int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
+	Dwarf_Addr biased_pc = pc + dbg->load_address;
+
+	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, biased_pc);
+	if (mod == NULL) {
+		const char *msg = dwfl_errmsg(dwfl_errno());
+		if (msg)
+			printf("dwfl_addrmodule: %s\n", msg);
+		else
+			printf("dwfl_addrmodule: it returned NULL\n");
+		return 0;
+	}
+
+	Dwfl_Line *src = dwfl_module_getsrc(mod, biased_pc);
+	if (src == NULL) {
+		const char *msg = dwfl_errmsg(dwfl_errno());
+		if (msg)
+			printf("dwfl_module_getsrc: %s\n", msg);
+		else
+			printf("dwfl_module_getsrc: it returned NULL\n");
+		return 0;
+	}
+
+	int line_number = 0, column = 0;
+	*file = dwfl_lineinfo(src, &biased_pc, &line_number, &column, NULL, NULL);
+
+#ifdef DEBUG
+	assert(*file);
+	printf("[DEBUG] file: %s\n", *file);
+	printf("[DEBUG] pc: %lx, line no.: %d, column: %d\n", pc, line_number, column);
+#endif
+
+	// print_source(file, (unsigned int)line_number, 3);
+    return line_number;
 }
 
 // to get the base address of dyn executable
@@ -120,7 +179,7 @@ static void initialize_load_address(debugger *dbg) {
 		}
 		if (addr != 0) {
 #ifdef DEBUG
-			printf("DEBUG: load_address initialized with 0x%lx\n", addr);
+			printf("[DEBUG] load_address initialized with 0x%lx\n", addr);
 #endif
 			dbg->load_address = addr;
 		}
@@ -148,7 +207,7 @@ void add_arguments_for_tracee(debugger *dbg, char **args) {
 		i++;
 	}
 #ifdef DEBUG
-	printf("DEBUG: added %d arguments\n", i);
+	printf("[DEBUG] added %d arguments\n", i);
 #endif
 }
 
@@ -181,7 +240,7 @@ static void kill_tracee(debugger *dbg) {
 	waitpid(dbg->pid, NULL, 0);
 	cleanup_at_tracee_death(dbg);
 #ifdef DEBUG
-	printf("DEBUG: this tracee is killed. new one is going to start\n");
+	printf("[DEBUG] this tracee is killed. new one is going to start\n");
 #endif
 }
 
@@ -193,13 +252,14 @@ static void spawn_tracee(debugger *dbg) {
 		execv(dbg->process_name, dbg->args);
 	} else {
 #ifdef DEBUG
-		printf("Running %s ....\n", dbg->process_name);
+		printf("[DEBUG] Running %s ....\n", dbg->process_name);
 #endif
 		dbg->pid = pid;
 		wait_for_signal(dbg);
 		initialize_load_address(dbg);
 		dbg->state = ACTIVE;
 		resolve_pending_breakpoints(dbg);
+		setup_dwfl(dbg);
 		continue_execution(dbg);
 	}
 }
@@ -227,14 +287,14 @@ void restart(debugger *dbg) {
 
 void resolve_pending_breakpoints(debugger *dbg) {
 #ifdef DEBUG
-	printf("DEBUG: resolving all the breakpoints in the list\n");
+	printf("[DEBUG] resolving all the breakpoints in the list\n");
 #endif
 	size_t i = 0;
 	uintptr_t addr;
 	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
 		addr += dbg->load_address;
 #ifdef DEBUG
-		printf("DEBUG: resolving 0x%lx\n", addr);
+		printf("[DEBUG] resolving 0x%lx\n", addr);
 #endif
 		if (map_it_exsists(dbg->breakpoints, addr)) {
 			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
@@ -245,8 +305,8 @@ void resolve_pending_breakpoints(debugger *dbg) {
 				bp_enable(bp);
 			} else {
 #ifdef DEBUG
-				printf("DEBUG: Breakpoint already set at 0x%lx\n", addr);
-				printf("DEBUG: freeing this breakpoint\n");
+				printf("[DEBUG] Breakpoint already set at 0x%lx\n", addr);
+				printf("[DEBUG] freeing this breakpoint\n");
 #endif
 				bp_free(bp);
 			}
@@ -277,8 +337,8 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 		bp_enable(bp);
 	} else {
 #ifdef DEBUG
-		printf("DEBUG: Breakpoint already set at 0x%lx\n", addr);
-		printf("DEBUG: freeing this breakpoint\n");
+		printf("[DEBUG] Breakpoint already set at 0x%lx\n", addr);
+		printf("[DEBUG] freeing this breakpoint\n");
 #endif
 		bp_free(bp);
 	}
@@ -292,7 +352,7 @@ void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 		return;
 	}
 #ifdef DEBUG
-	printf("DEBUG: Disabling breakpint at addr 0x%lx\n", addr);
+	printf("[DEBUG] Disabling breakpint at addr 0x%lx\n", addr);
 #endif
 	bp_disable(found_bp);
 	delete_breakpoint_from_pending(dbg->pending_breakpoints, addr);
@@ -317,6 +377,8 @@ void disable_breakpoint(debugger *dbg, uintptr_t addr) {
 }
 
 static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
+    const char *file;
+    int line_no;
 	switch (siginfo.si_code) {
 	case 0:
 		// wierd behaviour encountered
@@ -331,11 +393,19 @@ static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 		set_pc(dbg->pid, get_pc(dbg->pid) - 1);
 		printf("Hit breakpoint at " BRED "0x%lx\n" reset,
 		       offset_load_address(dbg, get_pc(dbg->pid)));
-		// TODO: print source lines
+
+		line_no = get_line_from_pc(dbg, offset_load_address(dbg, get_pc(dbg->pid)), &file);
+        print_source(file, (uint32_t)line_no, 3);
+
 		return;
 	}
 	// this will trigger when signal was sent by single stepping
 	case TRAP_TRACE:
+#ifdef DEBUG
+		printf("[DEBUG] Single stepping caught\n");
+#endif
+		// line_no = get_line_from_pc(dbg, offset_load_address(dbg, get_pc(dbg->pid)), &file);
+		//       print_source(file, (uint32_t)line_no, 2);
 		return;
 	default:
 		printf("Unknown sigtrap code: %d, %d\n", siginfo.si_signo, siginfo.si_code);
@@ -382,13 +452,15 @@ void wait_for_signal(debugger *dbg) {
 		handle_sigtrap(dbg, siginfo);
 		break;
 	case SIGSEGV: {
-		printf("Caught Segfault! Reason code: %d\n", siginfo.si_code);
+		printf(BRED "!! " reset "Caught " YEL "Segfault" reset "! Reason: " CYN "%s\n" reset,
+		       str_sigsegv_code(siginfo.si_code));
 		// saving the signal to pass it to the tracee
 		dbg->pending_signal = siginfo.si_signo;
 		break;
 	}
+	// TODO: handle SIGABRT
 
-	// just avoid these signals and send those to tracee silently
+	// just avoid these signals and send to tracee silently
 	// without giving user the prompt
 	case SIGWINCH:
 	case SIGCHLD:
@@ -398,6 +470,32 @@ void wait_for_signal(debugger *dbg) {
 		break;
 	default:
 		printf("Got unhandled signal: %s\n", strsignal(siginfo.si_signo));
+	}
+}
+
+void single_step_instruction(debugger *dbg) {
+#ifdef DEBUG
+	printf("[DEBUG] single stepping instruction\n");
+	printf("[DEBUG] pc before single stepping: 0x%lx\n", get_pc(dbg->pid));
+#endif
+	ptrace(PTRACE_SINGLESTEP, dbg->pid, NULL, NULL);
+#ifdef DEBUG
+	printf("[DEBUG] pc after single stepping: 0x%lx\n", get_pc(dbg->pid));
+#endif
+	wait_for_signal(dbg);
+}
+
+void single_step_instruction_with_breakpoint_check(debugger *dbg) {
+    // TODO: double map lookup happening
+    // FIX: only lookup once
+	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
+	if (bp != NULL) {
+#ifdef DEBUG
+		printf("[DEBUG] bp found here now stepping over it\n");
+#endif
+		step_over_breakpoint(dbg);
+	} else {
+		single_step_instruction(dbg);
 	}
 }
 
@@ -411,8 +509,7 @@ void step_over_breakpoint(debugger *dbg) {
 	if (bp_is_enabled(bp)) {
 		bp_disable(bp);
 		// single step forward to jump through the breakpoint instruction
-		ptrace(PTRACE_SINGLESTEP, dbg->pid, NULL, NULL);
-		wait_for_signal(dbg);
+		single_step_instruction(dbg);
 		bp_enable(bp);
 	}
 }
@@ -488,8 +585,9 @@ void remove_all_breakpoints(debugger *dbg) {
 
 void dbg_free(debugger *dbg) {
 #ifdef DEBUG
-	printf("DEBUG: freeing the debugger before exiting\n");
+	printf("[DEBUG] freeing the debugger before exiting\n");
 #endif
+	dwfl_end(dbg->dwarf_data);
 	elf_end(dbg->elf_data);
 	close(dbg->file_descriptor);
 	map_free(dbg->breakpoints);

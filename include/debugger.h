@@ -10,7 +10,7 @@ typedef struct DBG debugger;
 typedef enum Debugger_State {
     ACTIVE,
     NOT_ACTIVE
-} state;
+} dbg_state;
 
 debugger* dbg_init(const char* pname);
 void dbg_start(debugger* dbg);
@@ -20,6 +20,8 @@ bool dbg_is_active(debugger *dbg);
 bool dbg_kill_tracee(debugger *dbg);
 void dbg_free(debugger* dbg);
 
+// int print_src_lines_at_pc(debugger *dbg, uintptr_t pc, const char **file);
+int get_line_from_pc(debugger *dbg, uintptr_t pc, const char **file);
 void run(debugger *dbg);
 void restart(debugger *dbg);
 void add_arguments_for_tracee(debugger *dbg, char **args);
@@ -29,6 +31,7 @@ void enable_breakpoint(debugger *dbg, uintptr_t addr);
 void disable_breakpoint(debugger *dbg, uintptr_t addr);
 void resolve_pending_breakpoints(debugger *dbg) ;
 void wait_for_signal(debugger* dbg);
+void single_step_instruction_with_breakpoint_check(debugger *dbg);
 void step_over_breakpoint(debugger* dbg);
 void continue_execution(debugger* dbg);
 void disable_all_breakpoints(debugger *dbg);

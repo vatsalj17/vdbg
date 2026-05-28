@@ -125,8 +125,8 @@ void dump_registers(pid_t pid) {
 	}
 }
 
-long read_memory(pid_t pid, uintptr_t addr) {
-	return ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
+uint64_t read_memory(pid_t pid, uintptr_t addr) {
+	return (uint64_t)ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
 }
 
 void write_memory(pid_t pid, uintptr_t addr, uintptr_t value) {

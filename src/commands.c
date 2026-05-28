@@ -9,16 +9,7 @@
 #include "debugger.h"
 #include "colors.h"
 
-typedef void (*cmd_handler)(debugger *dbg, char **args);
-
-typedef struct {
-	const char *name;
-	cmd_handler handler;
-	bool requires_running_pid;
-	const char *help_text;
-} command_entry;
-
-static const command_entry commands[] = {
+const command_entry commands[] = {
     {"run", cmd_run, false, "Start tracee"},
     {"break", cmd_break, false, "Set breakpoint"},
     {"continue", cmd_continue, true, "Resume execution"},
@@ -32,6 +23,7 @@ static const command_entry commands[] = {
     {"clear", cmd_clear, false, "Clear all breakpoints"},
     {"restart", cmd_restart, true, "Restart tracee"},
     {"arguments", cmd_arguments, false, "Pass arguments to the tracee"},
+    {"stepi", cmd_stepi, true, "Single step through instructions"},
     {NULL, NULL, false, NULL},
 };
 
@@ -57,6 +49,13 @@ void cmd_restart(debugger *dbg, char **args __attribute__((unused))) {
 
 void cmd_continue(debugger *dbg, char **args __attribute__((unused))) {
 	continue_execution(dbg);
+}
+
+void cmd_stepi(debugger *dbg, char **args __attribute__((unused))) {
+    single_step_instruction_with_breakpoint_check(dbg);
+    const char *file;
+    int line_no = get_line_from_pc(dbg, offset_load_address(dbg, get_pc(dbg_get_pid(dbg))), &file);
+    print_source(file, (uint32_t)line_no, 2);
 }
 
 void cmd_exit(debugger *dbg, char **args __attribute__((unused))) {
