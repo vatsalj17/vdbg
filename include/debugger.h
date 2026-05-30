@@ -20,26 +20,22 @@ bool dbg_is_active(debugger *dbg);
 bool dbg_kill_tracee(debugger *dbg);
 void dbg_free(debugger* dbg);
 
-// int print_src_lines_at_pc(debugger *dbg, uintptr_t pc, const char **file);
-int get_line_from_pc(debugger *dbg, uintptr_t pc, const char **file);
-void print_source_at_pc(debugger *dbg);
-void run(debugger *dbg);
-void restart(debugger *dbg);
-void add_arguments_for_tracee(debugger *dbg, char **args);
+uintptr_t offset_load_address(debugger *dbg, uintptr_t addr);
+
 void set_breakpoint_at_addr(debugger* dbg, uintptr_t addr);
 void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr);
 void enable_breakpoint(debugger *dbg, uintptr_t addr);
 void disable_breakpoint(debugger *dbg, uintptr_t addr);
-void resolve_pending_breakpoints(debugger *dbg) ;
-void wait_for_signal(debugger* dbg);
+void disable_all_breakpoints(debugger *dbg);
 void single_step_instruction_with_breakpoint_check(debugger *dbg);
+void remove_all_breakpoints(debugger *dbg);
+
+void run(debugger *dbg);
+void restart(debugger *dbg);
+void print_source_at_pc(debugger *dbg);
+void add_arguments_for_tracee(debugger *dbg, char **args);
 void step_in(debugger *dbg);
 void step_out(debugger *dbg);
-void step_over_breakpoint(debugger* dbg);
 void continue_execution(debugger* dbg);
-void disable_all_breakpoints(debugger *dbg);
-void cleanup_at_tracee_death(debugger *dbg);
-void remove_all_breakpoints(debugger *dbg);
-uintptr_t offset_load_address(debugger *dbg, uintptr_t addr);
 
 #endif

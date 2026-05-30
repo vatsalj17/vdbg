@@ -9,18 +9,23 @@ typedef struct entry {
 	struct entry *next;
 } entry;
 
+// using fibonacci hashing cause it's better for storing
+// 64-bit virtual memory addresses
+// ref.:- https://smplu.link/fibonacci-hashing
 typedef struct UnorderedMap {
 	uint32_t size;
+	uint8_t shift_bits;
 	cleanupfunction *cf;
 	entry **elements;
 } map;
 
-static size_t map_index(map *ht, uintptr_t key) {
-	size_t result = (size_t)key % ht->size;
+static inline uint32_t map_index(map *ht, uint64_t key) {
+	uint32_t result = (uint32_t)((key * 11400714819323198485lu) >> ht->shift_bits);
 	return result;
 }
 
 map *map_init(uint32_t size, cleanupfunction *cf) {
+	if (size == 0) return NULL;
 	map *ht = malloc(sizeof(map));
 	ht->size = size;
 	if (cf) {
@@ -28,6 +33,9 @@ map *map_init(uint32_t size, cleanupfunction *cf) {
 	} else {
 		ht->cf = NULL;
 	}
+	ht->shift_bits = 64 - (uint8_t)__builtin_ctz(size); // 64 - log2(size)
+	// __builtin_ctz counts trailing zeros from the lsb
+
 	ht->elements = calloc(ht->size, sizeof(entry *));
 	return ht;
 }
@@ -57,17 +65,6 @@ void *map_lookup(map *ht, uintptr_t key) {
 	}
 	if (temp == NULL) return NULL;
 	return temp->obj;
-}
-
-bool map_it_exsists(map *ht, uintptr_t key) {
-	if (ht == NULL) return false;
-	size_t index = map_index(ht, key);
-	entry *temp = ht->elements[index];
-	while (temp != NULL && key != temp->key) {
-		temp = temp->next;
-	}
-	if (temp == NULL) return false;
-	return true;
 }
 
 void map_delete(map *ht, uintptr_t key) {

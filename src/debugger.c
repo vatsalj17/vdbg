@@ -35,7 +35,7 @@ static const Dwfl_Callbacks callbacks = {
 };
 
 // enabling tab completion support for speed
-char **my_completion(const char *text, int start, int end __attribute__((unused))) {
+static char **my_completion(const char *text, int start, int end __attribute__((unused))) {
 	rl_attempted_completion_over = 1;
 	if (start == 0) {
 		return rl_completion_matches(text, command_generator);
@@ -109,7 +109,7 @@ bool dbg_is_active(debugger *dbg) {
 }
 
 // to setting up dwfl to read modules later on in the code
-void setup_dwfl(debugger *dbg) {
+static void setup_dwfl(debugger *dbg) {
 	// actually idk what the heck it is doing
 	// adding this lead to finally being able to
 	// get Dwfl_Module not null
@@ -124,7 +124,7 @@ void setup_dwfl(debugger *dbg) {
 }
 
 // returns the line number and the file
-int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
+static int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, pc);
 	if (mod == NULL) {
 		const char *msg = dwfl_errmsg(dwfl_errno());
@@ -243,6 +243,13 @@ void dbg_start(debugger *dbg) {
 	}
 }
 
+static void cleanup_at_tracee_death(debugger *dbg) {
+	// disabling all breakpoints so that next time when it runs
+	// i can enable it all
+	dbg->state = NOT_ACTIVE;
+	disable_all_breakpoints(dbg);
+}
+
 static void kill_tracee(debugger *dbg) {
 	ptrace(PTRACE_KILL, dbg->pid, NULL, NULL);
 	waitpid(dbg->pid, NULL, 0);
@@ -250,6 +257,139 @@ static void kill_tracee(debugger *dbg) {
 #ifdef DEBUG
 	printf("[DEBUG] this tracee is killed. new one is going to start\n");
 #endif
+}
+
+static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
+	switch (siginfo.si_code) {
+	case 0:
+		// wierd behaviour encountered
+		// when program starts it catches sigtrap
+		// but with si_code set to zero. idk why?
+		// people say exec sent it
+		return;
+	case SI_KERNEL:
+	case TRAP_BRKPT: {
+		// putting the pc back where it should be
+		// -1 because execution will go past the breakpoint
+		uintptr_t pc = get_pc(dbg->pid);
+		breakpoint *bp = map_lookup(dbg->breakpoints, pc - 1);
+		set_pc(dbg->pid, pc - 1);
+
+        // not printing the message if the breakpoint is temperory
+		if (!bp_is_temp(bp))
+			printf("Hit breakpoint at " BRED "0x%lx\n" reset,
+			       offset_load_address(dbg, get_pc(dbg->pid)));
+
+		print_source_at_pc(dbg);
+
+		return;
+	}
+	// this will trigger when signal was sent by single stepping
+	case TRAP_TRACE:
+#ifdef DEBUG
+		printf("[DEBUG] Single stepping caught\n");
+#endif
+		// printing the source code for single stepping in commands.c
+		return;
+	default:
+		printf("Unknown sigtrap code: %d, %d\n", siginfo.si_signo, siginfo.si_code);
+		return;
+	}
+}
+
+static siginfo_t get_signal_info(debugger *dbg) {
+	siginfo_t info;
+	if (ptrace(PTRACE_GETSIGINFO, dbg->pid, NULL, &info) == -1) {
+		perror("get_signal_info");
+		abort();
+	}
+	return info;
+}
+
+// the main signal handler of this debugger
+static void wait_for_signal(debugger *dbg) {
+	int wait_status, option = 0;
+	errno = 0;
+	if (waitpid(dbg->pid, &wait_status, option) == -1) {
+		if (errno == ECHILD)
+			printf("!! No process being traced !!\n");
+		else
+			perror("waitpid");
+		return;
+	}
+	if (WIFEXITED(wait_status)) {
+		printf("Program exited gracefully with code %d\n", WEXITSTATUS(wait_status));
+		cleanup_at_tracee_death(dbg);
+		return;
+	}
+	// if killed by an uncatchable signal like sigkill
+	if (WIFSIGNALED(wait_status)) {
+		printf("Program was terminated by the signal: %s\n", strsignal(WTERMSIG(wait_status)));
+		cleanup_at_tracee_death(dbg);
+		return;
+	}
+
+	siginfo_t siginfo = get_signal_info(dbg);
+	switch (siginfo.si_signo) {
+	case SIGTRAP:
+		handle_sigtrap(dbg, siginfo);
+		break;
+	case SIGSEGV: {
+		printf(BRED "!! " reset "Caught " YEL "Segfault" reset "! Reason: " CYN "%s\n" reset,
+		       str_sigsegv_code(siginfo.si_code));
+		// saving the signal to pass it to the tracee
+		dbg->pending_signal = siginfo.si_signo;
+		break;
+	}
+	case SIGABRT: {
+		// mirrored the SIGSEGV handling
+		printf("Tracee terminated by SIGABRT\n");
+		dbg->pending_signal = siginfo.si_signo;
+		break;
+	}
+
+	// just avoid these signals and send to tracee silently
+	// without giving user the prompt
+	case SIGWINCH:
+	case SIGCHLD:
+	case SIGURG:
+	case SIGALRM:
+		ptrace(PTRACE_CONT, dbg->pid, NULL, siginfo.si_signo);
+		break;
+	default:
+		printf("Got unhandled signal: %s\n", strsignal(siginfo.si_signo));
+	}
+}
+
+static void resolve_pending_breakpoints(debugger *dbg) {
+#ifdef DEBUG
+	printf("[DEBUG] resolving all the breakpoints in the list\n");
+#endif
+	size_t i = 0;
+	uintptr_t addr;
+	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
+		addr += dbg->load_address;
+#ifdef DEBUG
+		printf("[DEBUG] resolving 0x%lx\n", addr);
+#endif
+        breakpoint *bp = map_lookup(dbg->breakpoints, addr);
+		if (bp) {
+			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
+			bp_enable(map_lookup(dbg->breakpoints, addr));
+		} else {
+			bp = bp_init(dbg->pid, addr, false);
+			if (map_insert(dbg->breakpoints, addr, bp)) {
+				bp_enable(bp);
+			} else {
+#ifdef DEBUG
+				printf("[DEBUG] Breakpoint already set at 0x%lx\n", addr);
+				printf("[DEBUG] freeing this breakpoint\n");
+#endif
+				bp_free(bp);
+			}
+		}
+		i++;
+	}
 }
 
 static void spawn_tracee(debugger *dbg) {
@@ -291,36 +431,6 @@ void run(debugger *dbg) {
 void restart(debugger *dbg) {
 	kill_tracee(dbg);
 	spawn_tracee(dbg);
-}
-
-void resolve_pending_breakpoints(debugger *dbg) {
-#ifdef DEBUG
-	printf("[DEBUG] resolving all the breakpoints in the list\n");
-#endif
-	size_t i = 0;
-	uintptr_t addr;
-	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
-		addr += dbg->load_address;
-#ifdef DEBUG
-		printf("[DEBUG] resolving 0x%lx\n", addr);
-#endif
-		if (map_it_exsists(dbg->breakpoints, addr)) {
-			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
-			bp_enable(map_lookup(dbg->breakpoints, addr));
-		} else {
-			breakpoint *bp = bp_init(dbg->pid, addr, false);
-			if (map_insert(dbg->breakpoints, addr, bp)) {
-				bp_enable(bp);
-			} else {
-#ifdef DEBUG
-				printf("[DEBUG] Breakpoint already set at 0x%lx\n", addr);
-				printf("[DEBUG] freeing this breakpoint\n");
-#endif
-				bp_free(bp);
-			}
-		}
-		i++;
-	}
 }
 
 // it takes the address of the instruction as shown in the
@@ -417,109 +527,7 @@ void disable_breakpoint(debugger *dbg, uintptr_t addr) {
 	bp_disable(found_bp);
 }
 
-static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
-	switch (siginfo.si_code) {
-	case 0:
-		// wierd behaviour encountered
-		// when program starts it catches sigtrap
-		// but with si_code set to zero. idk why?
-		// people say exec sent it
-		return;
-	case SI_KERNEL:
-	case TRAP_BRKPT: {
-		// putting the pc back where it should be
-		// -1 because execution will go past the breakpoint
-		uintptr_t pc = get_pc(dbg->pid);
-		breakpoint *bp = map_lookup(dbg->breakpoints, pc - 1);
-		set_pc(dbg->pid, pc - 1);
-
-        // not printing the message if the breakpoint is temperory
-		if (!bp_is_temp(bp))
-			printf("Hit breakpoint at " BRED "0x%lx\n" reset,
-			       offset_load_address(dbg, get_pc(dbg->pid)));
-
-		print_source_at_pc(dbg);
-
-		return;
-	}
-	// this will trigger when signal was sent by single stepping
-	case TRAP_TRACE:
-#ifdef DEBUG
-		printf("[DEBUG] Single stepping caught\n");
-#endif
-		// printing the source code for single stepping in commands.c
-		return;
-	default:
-		printf("Unknown sigtrap code: %d, %d\n", siginfo.si_signo, siginfo.si_code);
-		return;
-	}
-}
-
-static siginfo_t get_signal_info(debugger *dbg) {
-	siginfo_t info;
-	if (ptrace(PTRACE_GETSIGINFO, dbg->pid, NULL, &info) == -1) {
-		perror("get_signal_info");
-		abort();
-	}
-	return info;
-}
-
-// the main signal handler of this debugger
-void wait_for_signal(debugger *dbg) {
-	int wait_status, option = 0;
-	errno = 0;
-	if (waitpid(dbg->pid, &wait_status, option) == -1) {
-		if (errno == ECHILD)
-			printf("!! No process being traced !!\n");
-		else
-			perror("waitpid");
-		return;
-	}
-	if (WIFEXITED(wait_status)) {
-		printf("Program exited gracefully with code %d\n", WEXITSTATUS(wait_status));
-		cleanup_at_tracee_death(dbg);
-		return;
-	}
-	// if killed by an uncatchable signal like sigkill
-	if (WIFSIGNALED(wait_status)) {
-		printf("Program was terminated by the signal: %s\n", strsignal(WTERMSIG(wait_status)));
-		cleanup_at_tracee_death(dbg);
-		return;
-	}
-
-	siginfo_t siginfo = get_signal_info(dbg);
-	switch (siginfo.si_signo) {
-	case SIGTRAP:
-		handle_sigtrap(dbg, siginfo);
-		break;
-	case SIGSEGV: {
-		printf(BRED "!! " reset "Caught " YEL "Segfault" reset "! Reason: " CYN "%s\n" reset,
-		       str_sigsegv_code(siginfo.si_code));
-		// saving the signal to pass it to the tracee
-		dbg->pending_signal = siginfo.si_signo;
-		break;
-	}
-	case SIGABRT: {
-		// mirrored the SIGSEGV handling
-		printf("Tracee terminated by SIGABRT\n");
-		dbg->pending_signal = siginfo.si_signo;
-		break;
-	}
-
-	// just avoid these signals and send to tracee silently
-	// without giving user the prompt
-	case SIGWINCH:
-	case SIGCHLD:
-	case SIGURG:
-	case SIGALRM:
-		ptrace(PTRACE_CONT, dbg->pid, NULL, siginfo.si_signo);
-		break;
-	default:
-		printf("Got unhandled signal: %s\n", strsignal(siginfo.si_signo));
-	}
-}
-
-void single_step_instruction(debugger *dbg) {
+static void single_step_instruction(debugger *dbg) {
 #ifdef DEBUG
 	printf("[DEBUG] single stepping instruction\n");
 	printf("[DEBUG] pc before single stepping: 0x%lx\n", get_pc(dbg->pid));
@@ -531,7 +539,7 @@ void single_step_instruction(debugger *dbg) {
 	wait_for_signal(dbg);
 }
 
-void execute_step_over(debugger *dbg, breakpoint *bp) {
+static void execute_step_over(debugger *dbg, breakpoint *bp) {
 	// if not null means we have currently hitted the breakpoint
 	if (bp == NULL) return;
 	// else
@@ -545,7 +553,7 @@ void execute_step_over(debugger *dbg, breakpoint *bp) {
 	}
 }
 
-void step_over_breakpoint(debugger *dbg) {
+static void step_over_breakpoint(debugger *dbg) {
 	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
     execute_step_over(dbg, bp);
 }
@@ -648,13 +656,6 @@ bool dbg_kill_tracee(debugger *dbg) {
 		printf("Killed tracee\n");
 	}
 	return true;
-}
-
-void cleanup_at_tracee_death(debugger *dbg) {
-	// disabling all breakpoints so that next time when it runs
-	// i can enable it all
-	dbg->state = NOT_ACTIVE;
-	disable_all_breakpoints(dbg);
 }
 
 void remove_all_breakpoints(debugger *dbg) {

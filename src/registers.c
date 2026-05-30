@@ -12,7 +12,7 @@ typedef struct RegDescriptor {
 	char *name;
 } reg_descriptor;
 
-reg_descriptor register_descriptors[REGISTERS_NUM] = {
+static reg_descriptor register_descriptors[REGISTERS_NUM] = {
     {r15, 15, "r15"},
     {r14, 14, "r14"},
     {r13, 13, "r13"},

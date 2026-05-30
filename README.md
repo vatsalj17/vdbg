@@ -10,9 +10,12 @@ A custom, lightweight Linux debugger built from scratch in C using `ptrace`.
 * **PIE / ASLR Support:** Calculates base load addresses by parsing `/proc/<pid>/maps` and offsets all breakpoint addresses accordingly.
 * **Tracee Arguments:** Pass arbitrary arguments to the tracee before launch via the `arguments` command.
 * **Tab Completion:** readline-backed command completion.
+* **DWARF Support:** Parses ELF/DWARF symbols via `libelf` and `libdw` to display source lines automatically when hitting a breakpoint.
+* **Stepping Control:** Supports stepping at both the instruction level (`stepi`) and source-code line level (`step`), as well as function completion (`finish`).
 
 ## Under the Hood
-* **The Engine (`debugger.c`):** Acts as a state machine, catching signals (`SIGTRAP`, `SIGSEGV`) and routing execution control.
+* **The Engine (`debugger.c`):** Acts as a state machine, catching signals (`SIGTRAP`, `SIGSEGV`, `SIGABRT`) and routing execution control, using temporary breakpoints to step out of functions.
+* **DWARF & ELF Parsing:** Resolves instruction addresses to source files and line numbers dynamically via `libdw` and `libelf`.
 * **State Management (`hashmap.c`):** Custom hash table to track active breakpoint state; a separate pending list handles pre-run breakpoints.
 * **Clean Abstraction:** OS/hardware specifics (`user_regs_struct` offsets, `PTRACE_POKEDATA`) are hidden behind isolated APIs (`registers.c`, `breakpoint.c`).
 
@@ -43,6 +46,9 @@ make debug    # debug build (symbols + -DDEBUG)
 | `disable <addr>` | Disable a breakpoint without removing it |
 | `clear` | Remove all breakpoints |
 | `continue` | Resume execution |
+| `stepi` | Single step through instructions |
+| `step` | Single step through source code |
+| `finish` | Skip/step out of the current function |
 | `register dump` | Dump all x86_64 register states |
 | `register read <reg>` | Read a register value |
 | `register write <reg> <val>` | Write a register value |
@@ -53,4 +59,6 @@ make debug    # debug build (symbols + -DDEBUG)
 
 
 ## Working On
-* Source-level debugging (DWARF)
+* Source-level breakpoints (by file:line or function name)
+* `next` command (step over function calls)
+* Executable and DWARF symbol validation checks
