@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -49,6 +50,8 @@ bool is_prefix(const char *input, const char *command) {
 }
 
 void print_source(const char *file_name, unsigned line, unsigned lines_context) {
+    assert(line);
+    assert(lines_context);
 	FILE *f = fopen(file_name, "r");
     if (f == NULL) {
 #ifdef DEBUG
@@ -58,7 +61,7 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
         return;
     }
     printf(CYN"\n %s:\n"reset , file_name);
-	unsigned start_line = line <= lines_context ? 1 : line - lines_context;
+	unsigned start_line = line <= lines_context ? 1 : line - lines_context + 1;
 #ifdef DEBUG
     // printf("line: %u & lines_context: %u\n", line, lines_context);
     // printf("startline: %u\n", start_line);
@@ -74,7 +77,7 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
 
 	char c;
 	unsigned current_line = 1u;
-	while (current_line <= start_line && (c = (char)fgetc(f)) != EOF) {
+	while (current_line < start_line && (c = (char)fgetc(f)) != EOF) {
 		if (c == '\n') current_line++;
 	}
 

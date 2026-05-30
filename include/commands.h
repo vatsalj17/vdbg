@@ -27,6 +27,8 @@ void cmd_arguments(debugger *dbg, char **args);
 void cmd_reg(debugger *dbg, char **args);
 void cmd_mem(debugger *dbg, char **args);
 void cmd_stepi(debugger *dbg, char **args);
+void cmd_step(debugger *dbg, char **args);
+void cmd_finish(debugger *dbg, char **args);
 void cmd_exit(debugger *dbg, char **args);
 void cmd_help(debugger *dbg, char **args);
 

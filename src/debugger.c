@@ -43,8 +43,6 @@ char **my_completion(const char *text, int start, int end __attribute__((unused)
 	return NULL;
 }
 
-// TODO: dwarf parsing
-
 typedef struct DBG {
 	char *process_name;           // the command
 	char **args;                  // arguments of the tracee
@@ -112,6 +110,11 @@ bool dbg_is_active(debugger *dbg) {
 
 // to setting up dwfl to read modules later on in the code
 void setup_dwfl(debugger *dbg) {
+	// actually idk what the heck it is doing
+	// adding this lead to finally being able to
+	// get Dwfl_Module not null
+	// hope libdwfl had documentation
+	// figuring this out took hours
 	if (dwfl_linux_proc_report(dbg->dwarf_data, dbg->pid) != 0) {
 		fprintf(stderr, "dwfl_linux_proc_report: %s\n", dwfl_errmsg(-1));
 		dwfl_end(dbg->dwarf_data);
@@ -120,10 +123,9 @@ void setup_dwfl(debugger *dbg) {
 	dwfl_report_end(dbg->dwarf_data, NULL, NULL);
 }
 
+// returns the line number and the file
 int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
-	Dwarf_Addr biased_pc = pc + dbg->load_address;
-
-	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, biased_pc);
+	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, pc);
 	if (mod == NULL) {
 		const char *msg = dwfl_errmsg(dwfl_errno());
 		if (msg)
@@ -133,7 +135,7 @@ int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 		return 0;
 	}
 
-	Dwfl_Line *src = dwfl_module_getsrc(mod, biased_pc);
+	Dwfl_Line *src = dwfl_module_getsrc(mod, pc);
 	if (src == NULL) {
 		const char *msg = dwfl_errmsg(dwfl_errno());
 		if (msg)
@@ -144,7 +146,7 @@ int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 	}
 
 	int line_number = 0, column = 0;
-	*file = dwfl_lineinfo(src, &biased_pc, &line_number, &column, NULL, NULL);
+	*file = dwfl_lineinfo(src, &pc, &line_number, &column, NULL, NULL);
 
 #ifdef DEBUG
 	assert(*file);
@@ -153,7 +155,13 @@ int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 #endif
 
 	// print_source(file, (unsigned int)line_number, 3);
-    return line_number;
+	return line_number;
+}
+
+void print_source_at_pc(debugger *dbg) {
+	const char *file;
+	int line_no = get_line_from_pc(dbg, get_pc(dbg->pid), &file);
+	print_source(file, (uint32_t)line_no, 3);
 }
 
 // to get the base address of dyn executable
@@ -300,7 +308,7 @@ void resolve_pending_breakpoints(debugger *dbg) {
 			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
 			bp_enable(map_lookup(dbg->breakpoints, addr));
 		} else {
-			breakpoint *bp = bp_init(dbg->pid, addr);
+			breakpoint *bp = bp_init(dbg->pid, addr, false);
 			if (map_insert(dbg->breakpoints, addr, bp)) {
 				bp_enable(bp);
 			} else {
@@ -315,6 +323,8 @@ void resolve_pending_breakpoints(debugger *dbg) {
 	}
 }
 
+// it takes the address of the instruction as shown in the
+// disassembly of the executable
 void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 	// not calling this function during resolution of breakpoints
 
@@ -328,7 +338,7 @@ void set_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 
 	addr += dbg->load_address; // adding the offset fo pie
 
-	breakpoint *bp = bp_init(dbg->pid, addr);
+	breakpoint *bp = bp_init(dbg->pid, addr, false);
 
 	// i think i should enable the breakpoint after inserting
 	// instead of enabling before inserting
@@ -358,6 +368,37 @@ void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr) {
 	delete_breakpoint_from_pending(dbg->pending_breakpoints, addr);
 }
 
+// it takes the actual virtual address of the running program
+// it will return false if a breakpoint is already set at the
+// place i am wanting to set the temp bp
+static bool set_temp_breakpoint(debugger *dbg, uintptr_t running_addr) {
+	breakpoint *bp = bp_init(dbg->pid, running_addr, true);
+	if (map_insert(dbg->breakpoints, running_addr, bp)) {
+		bp_enable(bp);
+	} else {
+#ifdef DEBUG
+		printf("[DEBUG] Breakpoint already set at 0x%lx\n", running_addr);
+		printf("[DEBUG] freeing this breakpoint\n");
+#endif
+		bp_free(bp);
+		return false;
+	}
+	return true;
+}
+
+static void unset_temp_breakpoint(debugger *dbg, uintptr_t running_addr) {
+	breakpoint *found_bp = map_lookup(dbg->breakpoints, running_addr);
+#ifdef DEBUG
+	if (found_bp == NULL) {
+		fprintf(stderr, "wth are you disabling at: 0x%lx\n", running_addr);
+		return;
+	}
+	printf("[DEBUG] Disabling breakpint at addr 0x%lx\n", running_addr);
+#endif
+	bp_disable(found_bp);
+    map_delete(dbg->breakpoints, running_addr);
+}
+
 void enable_breakpoint(debugger *dbg, uintptr_t addr) {
 	breakpoint *found_bp = map_lookup(dbg->breakpoints, addr);
 	if (found_bp == NULL) {
@@ -377,8 +418,6 @@ void disable_breakpoint(debugger *dbg, uintptr_t addr) {
 }
 
 static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
-    const char *file;
-    int line_no;
 	switch (siginfo.si_code) {
 	case 0:
 		// wierd behaviour encountered
@@ -390,12 +429,16 @@ static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 	case TRAP_BRKPT: {
 		// putting the pc back where it should be
 		// -1 because execution will go past the breakpoint
-		set_pc(dbg->pid, get_pc(dbg->pid) - 1);
-		printf("Hit breakpoint at " BRED "0x%lx\n" reset,
-		       offset_load_address(dbg, get_pc(dbg->pid)));
+		uintptr_t pc = get_pc(dbg->pid);
+		breakpoint *bp = map_lookup(dbg->breakpoints, pc - 1);
+		set_pc(dbg->pid, pc - 1);
 
-		line_no = get_line_from_pc(dbg, offset_load_address(dbg, get_pc(dbg->pid)), &file);
-        print_source(file, (uint32_t)line_no, 3);
+        // not printing the message if the breakpoint is temperory
+		if (!bp_is_temp(bp))
+			printf("Hit breakpoint at " BRED "0x%lx\n" reset,
+			       offset_load_address(dbg, get_pc(dbg->pid)));
+
+		print_source_at_pc(dbg);
 
 		return;
 	}
@@ -404,12 +447,10 @@ static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 #ifdef DEBUG
 		printf("[DEBUG] Single stepping caught\n");
 #endif
-		// line_no = get_line_from_pc(dbg, offset_load_address(dbg, get_pc(dbg->pid)), &file);
-		//       print_source(file, (uint32_t)line_no, 2);
+		// printing the source code for single stepping in commands.c
 		return;
 	default:
 		printf("Unknown sigtrap code: %d, %d\n", siginfo.si_signo, siginfo.si_code);
-		// printf("Unknown sigtrap code: %d\n", siginfo.si_code);
 		return;
 	}
 }
@@ -458,7 +499,12 @@ void wait_for_signal(debugger *dbg) {
 		dbg->pending_signal = siginfo.si_signo;
 		break;
 	}
-	// TODO: handle SIGABRT
+	case SIGABRT: {
+		// mirrored the SIGSEGV handling
+		printf("Tracee terminated by SIGABRT\n");
+		dbg->pending_signal = siginfo.si_signo;
+		break;
+	}
 
 	// just avoid these signals and send to tracee silently
 	// without giving user the prompt
@@ -485,22 +531,7 @@ void single_step_instruction(debugger *dbg) {
 	wait_for_signal(dbg);
 }
 
-void single_step_instruction_with_breakpoint_check(debugger *dbg) {
-    // TODO: double map lookup happening
-    // FIX: only lookup once
-	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
-	if (bp != NULL) {
-#ifdef DEBUG
-		printf("[DEBUG] bp found here now stepping over it\n");
-#endif
-		step_over_breakpoint(dbg);
-	} else {
-		single_step_instruction(dbg);
-	}
-}
-
-void step_over_breakpoint(debugger *dbg) {
-	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
+void execute_step_over(debugger *dbg, breakpoint *bp) {
 	// if not null means we have currently hitted the breakpoint
 	if (bp == NULL) return;
 	// else
@@ -512,6 +543,64 @@ void step_over_breakpoint(debugger *dbg) {
 		single_step_instruction(dbg);
 		bp_enable(bp);
 	}
+}
+
+void step_over_breakpoint(debugger *dbg) {
+	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
+    execute_step_over(dbg, bp);
+}
+
+void single_step_instruction_with_breakpoint_check(debugger *dbg) {
+	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
+	if (bp != NULL) {
+#ifdef DEBUG
+		printf("[DEBUG] bp found here now stepping over it\n");
+#endif
+		execute_step_over(dbg, bp);
+	} else {
+		single_step_instruction(dbg);
+	}
+}
+
+// the finish instruction
+void step_out(debugger *dbg) {
+	// getting the base pointer of the current stackframe from the data stored in rbp
+	uint64_t frame_pointer = get_register_value(rbp, dbg->pid);
+
+	// fetching return address from the value just above it
+	uint64_t return_address = read_memory(dbg->pid, frame_pointer + 8);
+#ifdef DEBUG
+	printf("[DEBUG] got return_address: 0x%lx\n", return_address);
+#endif
+
+	bool should_remove_breakpoint = false;
+	// adding a temp breakpoint
+	if (set_temp_breakpoint(dbg, return_address)) {
+		should_remove_breakpoint = true;
+	}
+
+	continue_execution(dbg);
+
+	// if added that temp bp then remove it
+	if (should_remove_breakpoint) {
+		unset_temp_breakpoint(dbg, return_address);
+	}
+}
+
+void step_in(debugger *dbg) {
+	const char *file;
+	int next_line;
+	int line = get_line_from_pc(dbg, get_pc(dbg->pid), &file);
+	if (line == 0) {
+		printf("Something is wrong\n");
+		abort();
+	}
+
+	while ((next_line = get_line_from_pc(dbg, get_pc(dbg->pid), &file)) == line) {
+		single_step_instruction_with_breakpoint_check(dbg);
+	}
+
+	print_source(file, (unsigned)next_line, 3);
 }
 
 void continue_execution(debugger *dbg) {

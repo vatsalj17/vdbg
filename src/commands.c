@@ -9,6 +9,8 @@
 #include "debugger.h"
 #include "colors.h"
 
+// TODO: add the next commmand
+
 const command_entry commands[] = {
     {"run", cmd_run, false, "Start tracee"},
     {"break", cmd_break, false, "Set breakpoint"},
@@ -24,6 +26,8 @@ const command_entry commands[] = {
     {"restart", cmd_restart, true, "Restart tracee"},
     {"arguments", cmd_arguments, false, "Pass arguments to the tracee"},
     {"stepi", cmd_stepi, true, "Single step through instructions"},
+    {"step", cmd_step, true, "Single step throught source code"},
+    {"finish", cmd_finish, true, "Skip the current function"},
     {NULL, NULL, false, NULL},
 };
 
@@ -53,9 +57,15 @@ void cmd_continue(debugger *dbg, char **args __attribute__((unused))) {
 
 void cmd_stepi(debugger *dbg, char **args __attribute__((unused))) {
     single_step_instruction_with_breakpoint_check(dbg);
-    const char *file;
-    int line_no = get_line_from_pc(dbg, offset_load_address(dbg, get_pc(dbg_get_pid(dbg))), &file);
-    print_source(file, (uint32_t)line_no, 2);
+    print_source_at_pc(dbg);
+}
+
+void cmd_step(debugger *dbg, char **args __attribute__((unused))) {
+    step_in(dbg);
+}
+
+void cmd_finish(debugger *dbg, char **args __attribute__((unused))) {
+    step_out(dbg);
 }
 
 void cmd_exit(debugger *dbg, char **args __attribute__((unused))) {
@@ -73,7 +83,7 @@ void cmd_arguments(debugger *dbg, char **args) {
     add_arguments_for_tracee(dbg, args + 1);
 }
 
-// TODO: proper argument validation (but after adding dwarf support)
+// TODO: proper argument validation (but after adding source level breakpoints)
 
 void cmd_break(debugger *dbg, char **args) {
 	if (!args[1]) {

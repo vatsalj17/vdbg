@@ -126,6 +126,9 @@ void dump_registers(pid_t pid) {
 }
 
 uint64_t read_memory(pid_t pid, uintptr_t addr) {
+#ifdef DEBUG
+    printf("[DEBUG] reading memory at address: 0x%lx\n", addr);
+#endif
 	return (uint64_t)ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
 }
 

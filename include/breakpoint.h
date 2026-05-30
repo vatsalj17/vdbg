@@ -11,10 +11,11 @@
 typedef struct BreakPoint breakpoint;
 typedef struct ListOfBreakpoints bp_list;
 
-breakpoint* bp_init(pid_t pid, uintptr_t addr);
+breakpoint* bp_init(pid_t pid, uintptr_t addr, bool is_temp);
 void bp_set_pid(breakpoint *bp, pid_t pid);
 bool bp_is_enabled(breakpoint* bp);
 uintptr_t bp_get_addr(breakpoint* bp);
+bool bp_is_temp(breakpoint *bp);
 void bp_enable(breakpoint* bp);
 void bp_disable(breakpoint* bp);
 void bp_free(breakpoint* bp);
