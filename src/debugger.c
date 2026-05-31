@@ -4,18 +4,19 @@
 
 #include <assert.h>
 #include <stdio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <readline/history.h>
-#include <readline/readline.h>
 #include <stdlib.h>
-#include <sys/ptrace.h>
-#include <sys/wait.h>
-#include <elfutils/libdwfl.h>
-#include <libelf.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <errno.h>
+#include <readline/history.h>
+#include <readline/readline.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
 #include <sys/personality.h>
+#include <sys/stat.h>
+#include <libelf.h>
+#include <elfutils/libdwfl.h>
 
 #include "commands.h"
 #include "registers.h"
@@ -46,16 +47,36 @@ static char **my_completion(const char *text, int start, int end __attribute__((
 typedef struct DBG {
 	char *process_name;           // the command
 	char **args;                  // arguments of the tracee
+	time_t mtime;                 // last modified to time of the executable
 	pid_t pid;                    // obvious
 	dbg_state state;              // tracking the state of debugger
 	map *breakpoints;             // hashtable of breakpoints
 	bp_list *pending_breakpoints; // list of pending breakpoints
 	uintptr_t load_address;       // to be calc the offset in dyn executable
 	int pending_signal;           // for that irritating SIGSEGV only currently
-	int file_descriptor;          // file opened to map in libelf
 	Elf *elf_data;                // elf stuffs
 	Dwfl *dwarf_data;             // dwarf parsing
+	bool has_dwarf_symbols;       // check for printing the src code
 } debugger;
+
+// returns true if debug symbols are present in the code
+static bool check_for_debug_symbols(debugger *dbg) {
+	// after hours of finding how to read
+	// name of section headers
+	// found the solution in this book
+	// https://sourceforge.net/projects/elftoolchain/files/Documentation/libelf-by-example/20120308/
+	Elf64_Ehdr *ehdr = elf64_getehdr(dbg->elf_data);
+	for (size_t i = 1;; i++) {
+		Elf_Scn *scnhdr = elf_getscn(dbg->elf_data, i);
+		if (scnhdr == NULL) break;
+		Elf64_Shdr *shdr = elf64_getshdr(scnhdr);
+		char *name = elf_strptr(dbg->elf_data, ehdr->e_shstrndx, shdr->sh_name);
+		if (strncmp(name, ".debug_info", 11) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
 
 debugger *dbg_init(const char *pname) {
 	debugger *new = malloc(sizeof(debugger));
@@ -68,29 +89,38 @@ debugger *dbg_init(const char *pname) {
 	new->process_name = strdup(pname);
 	new->args = calloc(MAX_ARGS, sizeof(char *));
 	new->args[0] = new->process_name;
+
+	struct stat file_stats;
+	stat(pname, &file_stats);
+	new->mtime = file_stats.st_mtim.tv_sec;
+
 	new->state = NOT_ACTIVE;
 	new->breakpoints = map_init(MAP_SIZE, bp_free);
 	new->pending_breakpoints = list_queue_init();
 	new->pending_signal = 0;
 	new->load_address = 0; // initialized for static files initially
-	new->file_descriptor = open(new->process_name, O_RDONLY);
-	if (new->file_descriptor == -1) {
+
+	int fd = open(new->process_name, O_RDONLY);
+	if (fd == -1) {
 		perror("open");
 		abort();
 	}
 
 	elf_version(EV_CURRENT); // necessary because libelf just won't work
-	new->elf_data = elf_begin(new->file_descriptor, ELF_C_READ_MMAP, NULL);
+	new->elf_data = elf_begin(fd, ELF_C_READ_MMAP, NULL);
 	if (new->elf_data == NULL) {
 		printf("elf_begin: %s\n", elf_errmsg(elf_errno()));
 		abort();
 	}
+	close(fd);
 
 	new->dwarf_data = dwfl_begin(&callbacks);
 	if (new->dwarf_data == NULL) {
 		printf("dwfl_begin: %s\n", dwfl_errmsg(dwfl_errno()));
 		abort();
 	}
+
+	new->has_dwarf_symbols = check_for_debug_symbols(new);
 
 	return new;
 }
@@ -108,7 +138,7 @@ bool dbg_is_active(debugger *dbg) {
 	return (dbg->state == ACTIVE);
 }
 
-// to setting up dwfl to read modules later on in the code
+// setting up dwfl to read modules later on in the code
 static void setup_dwfl(debugger *dbg) {
 	// actually idk what the heck it is doing
 	// adding this lead to finally being able to
@@ -147,18 +177,37 @@ static int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 
 	int line_number = 0, column = 0;
 	*file = dwfl_lineinfo(src, &pc, &line_number, &column, NULL, NULL);
+	if (*file == NULL) {
+		const char *msg = dwfl_errmsg(dwfl_errno());
+		if (msg)
+			printf("dwfl_lineinfo: %s\n", msg);
+		else
+			printf("dwfl_lineinfo: it returned NULL\n");
+		return 0;
+	}
 
 #ifdef DEBUG
-	assert(*file);
 	printf("[DEBUG] file: %s\n", *file);
 	printf("[DEBUG] pc: %lx, line no.: %d, column: %d\n", pc, line_number, column);
 #endif
 
-	// print_source(file, (unsigned int)line_number, 3);
+	struct stat statbuf;
+	stat(*file, &statbuf);
+#ifdef DEBUG
+	printf("[DEBUG] times: %lu, %lu \n", dbg->mtime, statbuf.st_mtim.tv_sec);
+#endif
+	if (dbg->mtime < statbuf.st_mtim.tv_sec) {
+		printf(RED "\n[" BYEL " Warning: " reset "source code is modified" RED " \t]\n");
+		printf("[" reset " pls recompile the code and then debug " RED "]\n" reset);
+	}
 	return line_number;
 }
 
 void print_source_at_pc(debugger *dbg) {
+	// it it does not have dwarf symbols than just return
+	// don't try to print the source code
+	if (!dbg->has_dwarf_symbols) return;
+
 	const char *file;
 	int line_no = get_line_from_pc(dbg, get_pc(dbg->pid), &file);
 	print_source(file, (uint32_t)line_no, 3);
@@ -223,6 +272,12 @@ void dbg_start(debugger *dbg) {
 	// setting up my own commands for completion
 	rl_attempted_completion_function = my_completion;
 
+	if (!dbg->has_dwarf_symbols) {
+		printf(RED "\n[" BYEL " Warning: " reset "this executable doesn't contain debug symbols" RED
+		           " ]\n");
+		printf("[\t " reset "  pls recompile the code with -g flag " RED " \t]\n" reset);
+	}
+
 	char *input;
 	// the cli infinite loop
 	while (1) {
@@ -275,7 +330,7 @@ static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 		breakpoint *bp = map_lookup(dbg->breakpoints, pc - 1);
 		set_pc(dbg->pid, pc - 1);
 
-        // not printing the message if the breakpoint is temperory
+		// not printing the message if the breakpoint is temperory
 		if (!bp_is_temp(bp))
 			printf("Hit breakpoint at " BRED "0x%lx\n" reset,
 			       offset_load_address(dbg, get_pc(dbg->pid)));
@@ -372,7 +427,7 @@ static void resolve_pending_breakpoints(debugger *dbg) {
 #ifdef DEBUG
 		printf("[DEBUG] resolving 0x%lx\n", addr);
 #endif
-        breakpoint *bp = map_lookup(dbg->breakpoints, addr);
+		breakpoint *bp = map_lookup(dbg->breakpoints, addr);
 		if (bp) {
 			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
 			bp_enable(map_lookup(dbg->breakpoints, addr));
@@ -506,7 +561,7 @@ static void unset_temp_breakpoint(debugger *dbg, uintptr_t running_addr) {
 	printf("[DEBUG] Disabling breakpint at addr 0x%lx\n", running_addr);
 #endif
 	bp_disable(found_bp);
-    map_delete(dbg->breakpoints, running_addr);
+	map_delete(dbg->breakpoints, running_addr);
 }
 
 void enable_breakpoint(debugger *dbg, uintptr_t addr) {
@@ -555,7 +610,7 @@ static void execute_step_over(debugger *dbg, breakpoint *bp) {
 
 static void step_over_breakpoint(debugger *dbg) {
 	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
-    execute_step_over(dbg, bp);
+	execute_step_over(dbg, bp);
 }
 
 void single_step_instruction_with_breakpoint_check(debugger *dbg) {
@@ -608,7 +663,7 @@ void step_in(debugger *dbg) {
 		single_step_instruction_with_breakpoint_check(dbg);
 	}
 
-	print_source(file, (unsigned)next_line, 3);
+	if (dbg->has_dwarf_symbols) print_source(file, (unsigned)next_line, 3);
 }
 
 void continue_execution(debugger *dbg) {
@@ -679,7 +734,6 @@ void dbg_free(debugger *dbg) {
 #endif
 	dwfl_end(dbg->dwarf_data);
 	elf_end(dbg->elf_data);
-	close(dbg->file_descriptor);
 	map_free(dbg->breakpoints);
 	list_free(dbg->pending_breakpoints);
 	for (int i = 1; dbg->args[i] != NULL; i++)

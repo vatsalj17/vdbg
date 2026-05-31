@@ -6,9 +6,6 @@
 #include "debugger.h"
 #include "colors.h"
 
-// TODO: executable validity check with source code
-// TODO: check if dwarf symbols are present or not
-
 int main(int argc, char **argv) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <executable>\n", argv[0]);
