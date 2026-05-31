@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ptrace.h>
-#include "colors.h"
+#include "macro.h"
 
 typedef struct RegDescriptor {
 	reg r;
@@ -103,7 +103,7 @@ void set_pc(pid_t pid, uintptr_t value) {
 }
 
 void dump_registers(pid_t pid) {
-	printf(BWHT "%-11s %-19s %s\n" reset, "Register", "Hex", "Decimal");
+	printf(BWHT "%-11s %-19s %s\n" RESET, "Register", "Hex", "Decimal");
 	for (int i = 0; i < REGISTERS_NUM; i++) {
 		uint64_t val = get_register_value(register_descriptors[i].r, pid);
 		const char *col = (val == 0) ? HBLK : HCYN;
@@ -117,7 +117,7 @@ void dump_registers(pid_t pid) {
 		else if (strcmp(register_descriptors[i].name, "rflags") == 0)
 			col = BHMAG;
 
-		printf("%s%-12s" reset "0x%016lx  " HBLK "%lu\n" reset,
+		printf("%s%-12s" RESET "0x%016lx  " HBLK "%lu\n" RESET,
 		       col,
 		       register_descriptors[i].name,
 		       val,
@@ -126,12 +126,11 @@ void dump_registers(pid_t pid) {
 }
 
 uint64_t read_memory(pid_t pid, uintptr_t addr) {
-#ifdef DEBUG
-    printf("[DEBUG] reading memory at address: 0x%lx\n", addr);
-#endif
+    DBG_LOG("reading memory at address: 0x%lx", addr);
 	return (uint64_t)ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
 }
 
 void write_memory(pid_t pid, uintptr_t addr, uintptr_t value) {
+    DBG_LOG("writing memory at address: 0x%lx", addr);
 	ptrace(PTRACE_POKEDATA, pid, addr, value);
 }

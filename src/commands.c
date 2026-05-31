@@ -7,7 +7,7 @@
 #include "registers.h"
 #include "util.h"
 #include "debugger.h"
-#include "colors.h"
+#include "macro.h"
 
 // TODO: add the next commmand
 
@@ -31,7 +31,7 @@ const command_entry commands[] = {
     {NULL, NULL, false, NULL},
 };
 
-void cmd_help(debugger *dbg __attribute__((unused)), char **args __attribute__((unused))) {
+void cmd_help(UNUSED debugger *dbg, UNUSED char **args) {
 	printf("\n Commands:\n");
 	for (int i = 0; commands[i].name != NULL; i++) {
 		printf("    %-10s ->  %s\n", commands[i].name, commands[i].help_text);
@@ -39,36 +39,36 @@ void cmd_help(debugger *dbg __attribute__((unused)), char **args __attribute__((
 	printf("\n");
 }
 
-void cmd_clear(debugger *dbg, char **args __attribute__((unused))) {
+void cmd_clear(debugger *dbg, UNUSED char **args) {
 	remove_all_breakpoints(dbg);
 }
 
-void cmd_run(debugger *dbg, char **args __attribute__((unused))) {
+void cmd_run(debugger *dbg, UNUSED char **args) {
 	run(dbg);
 }
 
-void cmd_restart(debugger *dbg, char **args __attribute__((unused))) {
+void cmd_restart(debugger *dbg, UNUSED char **args) {
 	restart(dbg);
 }
 
-void cmd_continue(debugger *dbg, char **args __attribute__((unused))) {
+void cmd_continue(debugger *dbg, UNUSED char **args) {
 	continue_execution(dbg);
 }
 
-void cmd_stepi(debugger *dbg, char **args __attribute__((unused))) {
-    single_step_instruction_with_breakpoint_check(dbg);
-    print_source_at_pc(dbg);
+void cmd_stepi(debugger *dbg, UNUSED char **args) {
+	single_step_instruction_with_breakpoint_check(dbg);
+	print_source_at_pc(dbg);
 }
 
-void cmd_step(debugger *dbg, char **args __attribute__((unused))) {
-    step_in(dbg);
+void cmd_step(debugger *dbg, UNUSED char **args) {
+	step_in(dbg);
 }
 
-void cmd_finish(debugger *dbg, char **args __attribute__((unused))) {
-    step_out(dbg);
+void cmd_finish(debugger *dbg, UNUSED char **args) {
+	step_out(dbg);
 }
 
-void cmd_exit(debugger *dbg, char **args __attribute__((unused))) {
+void cmd_exit(debugger *dbg, UNUSED char **args) {
 	if (dbg_kill_tracee(dbg)) {
 		printf("Exiting....\n");
 		dbg_free(dbg);
@@ -79,15 +79,15 @@ void cmd_exit(debugger *dbg, char **args __attribute__((unused))) {
 }
 
 void cmd_arguments(debugger *dbg, char **args) {
-    // ignoring the command and passing the arguments
-    add_arguments_for_tracee(dbg, args + 1);
+	// ignoring the command and passing the arguments
+	add_arguments_for_tracee(dbg, args + 1);
 }
 
 // TODO: proper argument validation (but after adding source level breakpoints)
 
 void cmd_break(debugger *dbg, char **args) {
 	if (!args[1]) {
-		fprintf(stderr, BHRED "✗ " reset "usage: break <address>\n");
+		fprintf(stderr, BHRED "✗ " RESET "usage: break <address>\n");
 		return;
 	}
 	uintptr_t addr = strtoul(args[1], NULL, 16);
@@ -101,13 +101,13 @@ void cmd_delete(debugger *dbg, char **args) {
 
 void cmd_enable(debugger *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
-    addr += dbg_get_load_address(dbg);
+	addr += dbg_get_load_address(dbg);
 	enable_breakpoint(dbg, addr);
 }
 
 void cmd_disable(debugger *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
-    addr += dbg_get_load_address(dbg);
+	addr += dbg_get_load_address(dbg);
 	disable_breakpoint(dbg, addr);
 }
 
@@ -120,7 +120,7 @@ void cmd_reg(debugger *dbg, char **args) {
 		uintptr_t value = strtoul(args[3], NULL, 16);
 		set_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg), value);
 	} else {
-		fprintf(stderr, BHRED "✗ " reset "register %s: invalid command\n", args[1]);
+		fprintf(stderr, BHRED "✗ " RESET "register %s: invalid command\n", args[1]);
 	}
 }
 
@@ -132,7 +132,7 @@ void cmd_mem(debugger *dbg, char **args) {
 		uintptr_t value = strtoul(args[3], NULL, 16);
 		write_memory(dbg_get_pid(dbg), address, value);
 	} else {
-		fprintf(stderr, BHRED "✗ " reset "memory %s: invalid command\n", args[1]);
+		fprintf(stderr, BHRED "✗ " RESET "memory %s: invalid command\n", args[1]);
 	}
 }
 
@@ -148,7 +148,7 @@ void handle_command(debugger *dbg, char *input) {
 		if (is_prefix(command, commands[i].name)) {
 			if (!dbg_is_active(dbg) && commands[i].requires_running_pid) {
 				fprintf(stderr,
-				        BHRED "✗ " BCYN "%s:" reset " this command requires running tracee\n",
+				        BHRED "✗ " BCYN "%s:" RESET " this command requires running tracee\n",
 				        commands[i].name);
 				goto cleanup;
 			}
@@ -156,7 +156,7 @@ void handle_command(debugger *dbg, char *input) {
 			goto cleanup;
 		}
 	}
-	fprintf(stderr, BHRED "✗ " BCYN "%s:" reset " invalid command. Use help.\n", command);
+	fprintf(stderr, BHRED "✗ " BCYN "%s:" RESET " invalid command. Use help.\n", command);
 
 cleanup:
 	free(args);

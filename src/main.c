@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/personality.h>
 #include "debugger.h"
-#include "colors.h"
+#include "macro.h"
 
 int main(int argc, char **argv) {
 	if (argc != 2) {
@@ -12,7 +12,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
-	printf(BHYEL "$$ " BHGRN "Loaded " BHWHT "%s" BHGRN " into the debugger..." CRESET "\n",
+	printf(BHYEL "$$ " BHGRN "Loaded " BHWHT "%s" BHGRN " into the debugger..." RESET "\n",
 	       argv[1]);
 	debugger *dbg = dbg_init(argv[1]);
 	dbg_start(dbg);

@@ -11,6 +11,7 @@ A custom, lightweight Linux debugger built from scratch in C using `ptrace`.
 * **Tracee Arguments:** Pass arbitrary arguments to the tracee before launch via the `arguments` command.
 * **Tab Completion:** readline-backed command completion.
 * **DWARF Support:** Parses ELF/DWARF symbols via `libelf` and `libdw` to display source lines automatically when hitting a breakpoint.
+* **Symbol Validation:** Validates the executable and warns if debug symbols are missing.
 * **Stepping Control:** Supports stepping at both the instruction level (`stepi`) and source-code line level (`step`), as well as function completion (`finish`).
 
 ## Under the Hood
@@ -61,4 +62,3 @@ make debug    # debug build (symbols + -DDEBUG)
 ## Working On
 * Source-level breakpoints (by file:line or function name)
 * `next` command (step over function calls)
-* Executable and DWARF symbol validation checks

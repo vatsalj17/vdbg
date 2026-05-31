@@ -5,7 +5,7 @@
 #include <asm-generic/siginfo.h>
 
 #include "util.h"
-#include "colors.h"
+#include "macro.h"
 #include "commands.h"
 
 #define BUFSIZE 32
@@ -50,30 +50,22 @@ bool is_prefix(const char *input, const char *command) {
 }
 
 void print_source(const char *file_name, unsigned line, unsigned lines_context) {
-    assert(line);
-    assert(lines_context);
+	assert(line);
+	assert(lines_context);
 	FILE *f = fopen(file_name, "r");
-    if (f == NULL) {
-#ifdef DEBUG
-        fprintf(stderr, "[DEBUG] print_source: ");
-#endif
-        fprintf(stderr, "source file \"%s\" can't be opened\n", file_name);
-        return;
-    }
-    printf(CYN"\n %s:\n"reset , file_name);
+	if (f == NULL) {
+		fprintf(stderr, "source file \"%s\" can't be opened\n", file_name);
+		return;
+	}
+	printf(CYN "\n %s:\n" RESET, file_name);
 	unsigned start_line = line <= lines_context ? 1 : line - lines_context + 1;
-#ifdef DEBUG
-    // printf("line: %u & lines_context: %u\n", line, lines_context);
-    // printf("startline: %u\n", start_line);
-    // printf("start_line = (%u <= %u) ? 1 : %u - %u;\n", line, lines_context, line, lines_context);
-#endif
+	// printf("line: %u & lines_context: %u\n", line, lines_context);
+	// printf("startline: %u\n", start_line);
+	// printf("start_line = (%u <= %u) ? 1 : %u - %u;\n", line, lines_context, line, lines_context);
 
-	unsigned end_line =
-	    line + lines_context + (line < lines_context ? lines_context - line : 0);
-#ifdef DEBUG
-    // printf("endline: %u\n", end_line);
-    // printf("end_line = %u + %u + ((%u < %u) ? %u - %u : 0) + 1\n", line, lines_context, line, lines_context, lines_context, line);
-#endif
+	unsigned end_line = line + lines_context + (line < lines_context ? lines_context - line : 0);
+	// printf("endline: %u\n", end_line);
+	// printf("end_line = %u + %u + ((%u < %u) ? %u - %u : 0) + 1\n", line, lines_context, line, lines_context, lines_context, line);
 
 	char c;
 	unsigned current_line = 1u;
@@ -89,7 +81,7 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
 			printf("  %s%3d | ", (current_line == line) ? BGRN "> " GRN : HBLK "  ", current_line);
 		}
 	}
-	printf(reset "\r          \n");
+	printf(RESET "\r          \n");
 	fclose(f);
 }
 
@@ -117,8 +109,6 @@ char *str_sigsegv_code(int si_code) {
 	for (int i = 0; code_str[i].code; i++) {
 		if (si_code == code_str[i].code) return code_str[i].reason;
 	}
-#ifdef DEBUG
-	printf("DEBUG: SIGSEGV si_code: %d\n", si_code);
-#endif
+	DBG_ERR("SIGSEGV si_code: %d", si_code);
 	return "Unknown Code for SIGSEGV";
 }
