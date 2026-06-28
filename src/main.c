@@ -6,6 +6,9 @@
 #include "debugger.h"
 #include "macro.h"
 
+// TODO: loading of dynamic libraires
+// TODO: add disassembly using capstone
+
 int main(int argc, char **argv) {
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <executable>\n", argv[0]);

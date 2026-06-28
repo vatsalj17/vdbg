@@ -1,6 +1,7 @@
 #include "debugger.h"
 
 #include <assert.h>
+#include <elfutils/libdw.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -15,6 +16,7 @@
 #include <sys/stat.h>
 #include <libelf.h>
 #include <elfutils/libdwfl.h>
+#include <dwarf.h>
 
 #include "commands.h"
 #include "registers.h"
@@ -133,6 +135,10 @@ bool dbg_is_active(debugger *dbg) {
 	return (dbg->state == ACTIVE);
 }
 
+bool dbg_has_dwarf_symbols(debugger *dbg) {
+	return dbg->has_dwarf_symbols;
+}
+
 // setting up dwfl to read modules later on in the code
 static void setup_dwfl(debugger *dbg) {
 	// actually idk what the heck it is doing
@@ -151,35 +157,14 @@ static void setup_dwfl(debugger *dbg) {
 // returns the line number and the file
 static int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, pc);
-	if (mod == NULL) {
-		const char *msg = dwfl_errmsg(dwfl_errno());
-		if (msg)
-			DBG_ERR("dwfl_addrmodule: %s", msg);
-		else
-			DBG_ERR("dwfl_addrmodule: it returned NULL");
-		return 0;
-	}
+	DWFL_SANITY_CHECK(mod, "dwfl_addrmodule");
 
 	Dwfl_Line *src = dwfl_module_getsrc(mod, pc);
-	if (src == NULL) {
-		const char *msg = dwfl_errmsg(dwfl_errno());
-		if (msg)
-			DBG_ERR("dwfl_module_getsrc: %s", msg);
-		else
-			DBG_ERR("dwfl_module_getsrc: it returned NULL");
-		return 0;
-	}
+	DWFL_SANITY_CHECK(src, "dwfl_module_getsrc");
 
 	int line_number = 0, column = 0;
 	*file = dwfl_lineinfo(src, &pc, &line_number, &column, NULL, NULL);
-	if (*file == NULL) {
-		const char *msg = dwfl_errmsg(dwfl_errno());
-		if (msg)
-			DBG_ERR("dwfl_lineinfo: %s", msg);
-		else
-			DBG_ERR("dwfl_lineinfo: it returned NULL");
-		return 0;
-	}
+	DWFL_SANITY_CHECK(*file, "dwfl_lineinfo");
 
 	DBG_LOG("file: %s", *file);
 	DBG_LOG("pc: %lx, line no.: %d, column: %d", pc, line_number, column);
@@ -194,7 +179,30 @@ static int get_line_from_pc(debugger *dbg, Dwarf_Addr pc, const char **file) {
 	return line_number;
 }
 
-void print_source_at_pc(debugger *dbg) {
+static void get_func_die_from_pc(debugger *dbg, uintptr_t pc, Dwarf_Die *func_die) {
+	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, pc);
+	DWFL_SANITY_CHECK(mod, "dwfl_addrmodule");
+
+	Dwarf_Addr bias;
+	Dwarf_Die *die = dwfl_module_addrdie(mod, pc, &bias);
+	DWFL_SANITY_CHECK(die, "dwfl_module_addrdie");
+
+	int tag = dwarf_tag(die);
+
+	// finally figured out how to get the function die
+	Dwarf_Die *scopes;
+	int count = dwarf_getscopes(die, offset_load_address(dbg, pc), &scopes);
+	for (int i = 0; i < count; i++) {
+		tag = dwarf_tag(&scopes[i]);
+		if (tag == DW_TAG_subprogram) {
+			memcpy(func_die, &scopes[i], sizeof(Dwarf_Die));
+		}
+	}
+
+	free(scopes);
+}
+
+void print_source_at_current_pc(debugger *dbg) {
 	// it it does not have dwarf symbols than just return
 	// don't try to print the source code
 	if (!dbg->has_dwarf_symbols) return;
@@ -321,8 +329,11 @@ static void handle_sigtrap(debugger *dbg, siginfo_t siginfo) {
 		if (!bp_is_temp(bp))
 			printf("Hit breakpoint at " BRED "0x%lx" RESET "\n",
 			       offset_load_address(dbg, get_pc(dbg->pid)));
+		else
+			DBG_LOG("Hit temperory breakpoint at 0x%lx",
+			        offset_load_address(dbg, get_pc(dbg->pid)));
 
-		print_source_at_pc(dbg);
+		print_source_at_current_pc(dbg);
 
 		return;
 	}
@@ -558,7 +569,7 @@ static void single_step_instruction(debugger *dbg) {
 	wait_for_signal(dbg);
 }
 
-static void execute_step_over(debugger *dbg, breakpoint *bp) {
+static void execute_step_over_bp(debugger *dbg, breakpoint *bp) {
 	// if not null means we have currently hitted the breakpoint
 	if (bp == NULL) return;
 	// else
@@ -574,14 +585,14 @@ static void execute_step_over(debugger *dbg, breakpoint *bp) {
 
 static void step_over_breakpoint(debugger *dbg) {
 	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
-	execute_step_over(dbg, bp);
+	execute_step_over_bp(dbg, bp);
 }
 
 void single_step_instruction_with_breakpoint_check(debugger *dbg) {
 	breakpoint *bp = map_lookup(dbg->breakpoints, get_pc(dbg->pid));
 	if (bp != NULL) {
 		DBG_LOG("bp found here now stepping over it");
-		execute_step_over(dbg, bp);
+		execute_step_over_bp(dbg, bp);
 	} else {
 		single_step_instruction(dbg);
 	}
@@ -618,11 +629,82 @@ void step_in(debugger *dbg) {
 		CRITICAL("Something is wrong");
 	}
 
+	// loop until we are on the same line
 	while ((next_line = get_line_from_pc(dbg, get_pc(dbg->pid), &file)) == line) {
 		single_step_instruction_with_breakpoint_check(dbg);
 	}
 
 	if (dbg->has_dwarf_symbols) print_source(file, (unsigned)next_line, 3);
+}
+
+// the next instruction
+void step_over(debugger *dbg) {
+	uintptr_t pc = get_pc(dbg->pid);
+	Dwarf_Die func;
+	get_func_die_from_pc(dbg, pc, &func);
+
+	Dwarf_Addr func_entry, func_end;
+	const char *func_name = dwarf_diename(&func);
+	DBG_LOG("diename: %s", func_name);
+	dwarf_lowpc(&func, &func_entry);
+	dwarf_highpc(&func, &func_end);
+	DBG_LOG("func_entry: %lx, func_end: %lx", func_entry, func_end);
+	func_entry += dbg->load_address;
+	func_end += dbg->load_address;
+
+	uintptr_t *to_delete = malloc(100 * sizeof(intptr_t));
+	size_t to_delete_size = 0;
+
+	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, pc);
+	DWFL_SANITY_CHECK(mod, "dwfl_addrmodule");
+
+	Dwfl_Line *src = dwfl_module_getsrc(mod, pc);
+	DWFL_SANITY_CHECK(src, "dwfl_module_getsrc");
+
+	// setting breakpoints to all the lines from current to the end of the function
+	const char *file;
+	int current_line = get_line_from_pc(dbg, pc, &file);
+	// int current_line = 0, line = 0;
+	// file = dwfl_lineinfo(src, &pc, &current_line, NULL, NULL, NULL);
+	// assert(current_line != 0);
+
+	// uintptr_t last_pc = pc;
+	// printf("last_pc: %lu\n", last_pc);
+
+	while (pc < func_end) {
+		pc++;
+		int line = get_line_from_pc(dbg, pc, &file);
+		// uintptr_t temp = pc;
+		// dwfl_lineinfo(src, &temp, &line, NULL, NULL, NULL);
+		// printf("pc after inc: %lu\n", pc);
+		// assert(last_pc != pc);
+		// last_pc = pc;
+		// printf("line %d, current_line %d, pc: %lx\n", line, current_line, pc);
+		if (line > current_line) {
+			to_delete[to_delete_size++] = pc;
+			set_temp_breakpoint(dbg, pc);
+			// print_source(file, (uint32_t)current_line, 1);
+			current_line = line;
+		}
+	}
+
+	if (strncmp(func_name, "main", 4)) {
+		// setting breakpoint at return address
+		uint64_t frame_pointer = get_register_value(rbp, dbg->pid);
+		uint64_t return_address = read_memory(dbg->pid, frame_pointer + 8);
+		if (set_temp_breakpoint(dbg, return_address)) {
+			to_delete[to_delete_size++] = return_address;
+		}
+	}
+	DBG_LOG("to_delete_size: %zu", to_delete_size);
+
+	continue_execution(dbg);
+
+	DBG_LOG("cleaning up all the temp breakpoints");
+	for (size_t i = 0; i < to_delete_size; i++) {
+		unset_temp_breakpoint(dbg, to_delete[i]);
+	}
+	free(to_delete);
 }
 
 void continue_execution(debugger *dbg) {
@@ -658,7 +740,8 @@ bool dbg_kill_tracee(debugger *dbg) {
 	if (dbg->state == ACTIVE && kill(dbg->pid, 0) == 0) {
 		char *ans =
 		    readline(BRED "!! " RESET "The child process is still running. Kill it? (y/n) ");
-		if (ans && ans[0] == 'y') {
+		DBG_LOG("response: %s", ans);
+		if (!ans || ans[0] == 'y') {
 			kill_tracee(dbg);
 		} else {
 			free(ans);

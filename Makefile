@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c23 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE 
+CFLAGS = -std=c23 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
 CFLAGS += -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wnull-dereference -Wsign-conversion -Wformat=2
 LDFLAGS = -lreadline -lelf -ldw
 

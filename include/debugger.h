@@ -17,6 +17,7 @@ void dbg_start(debugger* dbg);
 pid_t dbg_get_pid(debugger* dbg);
 uintptr_t dbg_get_load_address(debugger *dbg);
 bool dbg_is_active(debugger *dbg);
+bool dbg_has_dwarf_symbols(debugger *dbg);
 bool dbg_kill_tracee(debugger *dbg);
 void dbg_free(debugger* dbg);
 
@@ -32,10 +33,11 @@ void remove_all_breakpoints(debugger *dbg);
 
 void run(debugger *dbg);
 void restart(debugger *dbg);
-void print_source_at_pc(debugger *dbg);
+void print_source_at_current_pc(debugger *dbg);
 void add_arguments_for_tracee(debugger *dbg, char **args);
 void step_in(debugger *dbg);
 void step_out(debugger *dbg);
+void step_over(debugger *dbg);
 void continue_execution(debugger* dbg);
 
 #endif

@@ -1,10 +1,7 @@
 #ifndef MACRO_H
 #define MACRO_H
 
-// since the codebase was becoming ugly so
-// i decided to make macros that i can use everwhere
-// instead of writing the same thing again and again
-// i can use these macros
+// macros to make the codebase look less ugly
 
 #ifdef DEBUG
 #define DBG_LOG(fmt, ...) fprintf(stderr, "[DEBUG](%s) " fmt "\n", __func__, ##__VA_ARGS__)
@@ -31,6 +28,18 @@
 	do {                                                                                           \
 		DBG_PERROR(msg);                                                                           \
 		abort();                                                                                   \
+	} while (0)
+
+#define DWFL_SANITY_CHECK(var, func)                                                                      \
+	do {                                                                                           \
+		if (var == NULL) {                                                                         \
+			const char *msg = dwfl_errmsg(dwfl_errno());                                           \
+			if (msg)                                                                               \
+				DBG_ERR("%s: %s", func, msg);                                                      \
+			else                                                                                   \
+				DBG_ERR("%s: it returned NULL", func);                                             \
+			abort();                                                                               \
+		}                                                                                          \
 	} while (0)
 
 #define UNUSED __attribute__((unused))

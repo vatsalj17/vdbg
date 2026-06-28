@@ -9,6 +9,7 @@ typedef struct {
 	const char *name;
 	cmd_handler handler;
 	bool requires_running_pid;
+    bool requires_dwarf_symbols;
 	const char *help_text;
 } command_entry;
 
@@ -29,6 +30,7 @@ void cmd_mem(debugger *dbg, char **args);
 void cmd_stepi(debugger *dbg, char **args);
 void cmd_step(debugger *dbg, char **args);
 void cmd_finish(debugger *dbg, char **args);
+void cmd_next(debugger *dbg, char **args);
 void cmd_exit(debugger *dbg, char **args);
 void cmd_help(debugger *dbg, char **args);
 
