@@ -276,12 +276,21 @@ void dbg_start(debugger *dbg) {
 	}
 
 	char *input;
+	char last_input[100] = {0};
 	// the cli infinite loop
 	while (1) {
 		if ((input = readline(HBLK "[" BHMAG "vdbg" HBLK "]" BHYEL "❯ " RESET)) != NULL) {
 			// avoid empty prompt
-			if (input[0] != '\0') {
+			if (input[0] == '\0') {
+				DBG_LOG("empty cmdline. trying to run the last one if any");
+				if (last_input[0]) handle_command(dbg, last_input);
+			} else {
 				add_history(input);
+				// saving the input so that we can rerun it
+				if (strlen(input) > 100)
+					last_input[0] = 0;
+				else
+					strncpy(last_input, input, 100);
 				handle_command(dbg, input);
 			}
 			free(input);
@@ -652,7 +661,8 @@ void step_over(debugger *dbg) {
 	func_entry += dbg->load_address;
 	func_end += dbg->load_address;
 
-	uintptr_t *to_delete = malloc(100 * sizeof(intptr_t));
+	size_t to_delete_cap = 100;
+	uintptr_t *to_delete = malloc(to_delete_cap * sizeof(uintptr_t));
 	size_t to_delete_size = 0;
 
 	Dwfl_Module *mod = dwfl_addrmodule(dbg->dwarf_data, pc);
@@ -661,34 +671,33 @@ void step_over(debugger *dbg) {
 	Dwfl_Line *src = dwfl_module_getsrc(mod, pc);
 	DWFL_SANITY_CHECK(src, "dwfl_module_getsrc");
 
-	// setting breakpoints to all the lines from current to the end of the function
-	const char *file;
-	int current_line = get_line_from_pc(dbg, pc, &file);
-	// int current_line = 0, line = 0;
-	// file = dwfl_lineinfo(src, &pc, &current_line, NULL, NULL, NULL);
-	// assert(current_line != 0);
-
-	// uintptr_t last_pc = pc;
-	// printf("last_pc: %lu\n", last_pc);
+	// setting breakpoints on all the lines from current to the end of the function
+	int current_line = 0, line = 0;
+	dwfl_lineinfo(src, NULL, &current_line, NULL, NULL, NULL);
+	assert(current_line != 0);
 
 	while (pc < func_end) {
-		pc++;
-		int line = get_line_from_pc(dbg, pc, &file);
-		// uintptr_t temp = pc;
-		// dwfl_lineinfo(src, &temp, &line, NULL, NULL, NULL);
-		// printf("pc after inc: %lu\n", pc);
-		// assert(last_pc != pc);
-		// last_pc = pc;
+		pc++; // TODO: now this is a problem (checking every byte is just so bad)
+              //       i have to figure out the correct way
+		src = dwfl_module_getsrc(mod, pc);
+		dwfl_lineinfo(src, NULL, &line, NULL, NULL, NULL);
 		// printf("line %d, current_line %d, pc: %lx\n", line, current_line, pc);
-		if (line > current_line) {
-			to_delete[to_delete_size++] = pc;
-			set_temp_breakpoint(dbg, pc);
+		if (line != current_line) {
+			if (set_temp_breakpoint(dbg, pc)) {
+				to_delete[to_delete_size++] = pc;
+				if (to_delete_size >= to_delete_cap - 1) {
+					to_delete_cap *= 2;
+					to_delete = realloc(to_delete, to_delete_cap * sizeof(uintptr_t));
+				}
+			}
 			// print_source(file, (uint32_t)current_line, 1);
 			current_line = line;
 		}
 	}
 
-	if (strncmp(func_name, "main", 4)) {
+	// ignoring to set breakpoint on return address of main so that it doesn't
+	// set bp on libc, and try to print the source
+	if (strcmp(func_name, "main") != 0) {
 		// setting breakpoint at return address
 		uint64_t frame_pointer = get_register_value(rbp, dbg->pid);
 		uint64_t return_address = read_memory(dbg->pid, frame_pointer + 8);
@@ -696,7 +705,7 @@ void step_over(debugger *dbg) {
 			to_delete[to_delete_size++] = return_address;
 		}
 	}
-	DBG_LOG("to_delete_size: %zu", to_delete_size);
+	// DBG_LOG("to_delete_size: %zu", to_delete_size);
 
 	continue_execution(dbg);
 
