@@ -61,8 +61,7 @@ typedef struct DBG {
 
 // returns true if debug symbols are present in the code
 static bool check_for_debug_symbols(debugger *dbg) {
-	// after hours of finding how to read
-	// name of section headers
+	// after hours of finding how to read the name of section headers
 	// found the solution in this book
 	// https://sourceforge.net/projects/elftoolchain/files/Documentation/libelf-by-example/20120308/
 	Elf64_Ehdr *ehdr = elf64_getehdr(dbg->elf_data);
@@ -678,7 +677,7 @@ void step_over(debugger *dbg) {
 
 	while (pc < func_end) {
 		pc++; // TODO: now this is a problem (checking every byte is just so bad)
-              //       i have to figure out the correct way
+		      //       i have to figure out the correct way
 		src = dwfl_module_getsrc(mod, pc);
 		dwfl_lineinfo(src, NULL, &line, NULL, NULL, NULL);
 		// printf("line %d, current_line %d, pc: %lx\n", line, current_line, pc);

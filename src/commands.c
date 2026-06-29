@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "registers.h"
 #include "util.h"
@@ -10,23 +11,23 @@
 #include "macro.h"
 
 const command_entry commands[] = {
-    {"run", cmd_run, false, false, "Start tracee"},
-    {"break", cmd_break, false, false, "Set breakpoint"},
-    {"continue", cmd_continue, true, false, "Resume execution"},
-    {"register", cmd_reg, true, false, "Manage CPU registers"},
-    {"memory", cmd_mem, true, false, "Manipulate memory at address"},
-    {"exit", cmd_exit, false, false, "Exit the debugger"},
-    {"help", cmd_help, false, false, "Show this menu"},
-    {"delete", cmd_delete, false, false, "Delete a specific breakpoint"},
-    {"enable", cmd_enable, true, false, "Enable any breakpoint"},
-    {"disable", cmd_disable, true, false, "Disable any breakpoint"},
-    {"clear", cmd_clear, false, false, "Clear all breakpoints"},
-    {"restart", cmd_restart, true, false, "Restart tracee"},
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
-    {"stepi", cmd_stepi, true, false, "Single step through instructions"},
-    {"step", cmd_step, true, true, "Single step throught source code"},
+    {"break", cmd_break, false, false, "Set breakpoint"},
+    {"clear", cmd_clear, false, false, "Clear all breakpoints"},
+    {"continue", cmd_continue, true, false, "Resume execution"},
+    {"delete", cmd_delete, false, false, "Delete a specific breakpoint"},
+    {"disable", cmd_disable, true, false, "Disable any breakpoint"},
+    {"exit", cmd_exit, false, false, "Exit the debugger"},
+    {"enable", cmd_enable, true, false, "Enable any breakpoint"},
     {"finish", cmd_finish, true, true, "Skip the current function"},
+    {"help", cmd_help, false, false, "Show this menu"},
+    {"memory", cmd_mem, true, false, "Manipulate memory at address"},
     {"next", cmd_next, true, true, "Step over current instruction"},
+    {"run", cmd_run, false, false, "Start tracee"},
+    {"restart", cmd_restart, true, false, "Restart tracee"},
+    {"register", cmd_reg, true, false, "Manage CPU registers"},
+    {"step", cmd_step, true, true, "Single step throught source code"},
+    {"stepi", cmd_stepi, true, false, "Single step through instructions"},
     {NULL, NULL, false, false, NULL},
 };
 
@@ -115,11 +116,11 @@ void cmd_disable(debugger *dbg, char **args) {
 }
 
 void cmd_reg(debugger *dbg, char **args) {
-	if (is_match(args[1], "dump")) {
+	if (is_prefix(args[1], "dump")) {
 		dump_registers(dbg_get_pid(dbg));
-	} else if (is_match(args[1], "read")) {
+	} else if (is_prefix(args[1], "read")) {
 		printf("0x%016lx\n", get_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg)));
-	} else if (is_match(args[1], "write")) {
+	} else if (is_prefix(args[1], "write")) {
 		uintptr_t value = strtoul(args[3], NULL, 16);
 		set_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg), value);
 	} else {
@@ -129,9 +130,9 @@ void cmd_reg(debugger *dbg, char **args) {
 
 void cmd_mem(debugger *dbg, char **args) {
 	uintptr_t address = strtoul(args[2], NULL, 16);
-	if (is_match(args[1], "read")) {
+	if (is_prefix(args[1], "read")) {
 		printf("0x%016lx\n", read_memory(dbg_get_pid(dbg), address));
-	} else if (is_match(args[1], "write")) {
+	} else if (is_prefix(args[1], "write")) {
 		uintptr_t value = strtoul(args[3], NULL, 16);
 		write_memory(dbg_get_pid(dbg), address, value);
 	} else {
@@ -147,20 +148,41 @@ void handle_command(debugger *dbg, char *input) {
 		return;
 	}
 
+	// check for exact matches of entered command
 	for (int i = 0; commands[i].name != NULL; i++) {
-		if (is_match(command, commands[i].name)) {
+		if (strcmp(command, commands[i].name) == 0) {
 			if (!dbg_is_active(dbg) && commands[i].requires_running_pid) {
 				fprintf(stderr,
 				        BHRED "✗ " BCYN "%s:" RESET " this command requires running tracee\n",
 				        commands[i].name);
 				goto cleanup;
 			}
-            if (commands[i].requires_dwarf_symbols && !dbg_has_dwarf_symbols(dbg)) {
+			if (commands[i].requires_dwarf_symbols && !dbg_has_dwarf_symbols(dbg)) {
 				fprintf(stderr,
 				        BHRED "✗ " BCYN "%s:" RESET " this command requires dwarf symbols\n",
 				        commands[i].name);
-                goto cleanup;
-            }
+				goto cleanup;
+			}
+			commands[i].handler(dbg, args);
+			goto cleanup;
+		}
+	}
+
+	// if previous fails then check for prefix matches
+	for (int i = 0; commands[i].name != NULL; i++) {
+		if (is_prefix(command, commands[i].name)) {
+			if (!dbg_is_active(dbg) && commands[i].requires_running_pid) {
+				fprintf(stderr,
+				        BHRED "✗ " BCYN "%s:" RESET " this command requires running tracee\n",
+				        commands[i].name);
+				goto cleanup;
+			}
+			if (commands[i].requires_dwarf_symbols && !dbg_has_dwarf_symbols(dbg)) {
+				fprintf(stderr,
+				        BHRED "✗ " BCYN "%s:" RESET " this command requires dwarf symbols\n",
+				        commands[i].name);
+				goto cleanup;
+			}
 			commands[i].handler(dbg, args);
 			goto cleanup;
 		}
