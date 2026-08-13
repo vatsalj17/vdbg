@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
 
 	printf(BHYEL "$$ " BHGRN "Loaded " BHWHT "%s" BHGRN " into the debugger..." RESET "\n",
 	       argv[1]);
-	debugger *dbg = dbg_init(argv[1]);
+	debugger_t *dbg = dbg_init(argv[1]);
 	dbg_start(dbg);
 	dbg_free(dbg);
 }

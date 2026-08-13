@@ -38,8 +38,6 @@ typedef enum Registers {
 	gs = offsetof(struct user_regs_struct, gs),
 } reg;
 
-typedef struct RegDescriptor reg_descriptor;
-
 uintptr_t get_register_value(reg r, pid_t pid);
 void set_register_value(reg r, pid_t pid, uintptr_t value);
 uintptr_t get_register_value_from_dwarf_register(int regnum, pid_t pid);

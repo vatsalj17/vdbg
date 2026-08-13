@@ -5,3 +5,4 @@ vdbg
 seg
 *.txt
 demo
+.gdb*

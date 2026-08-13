@@ -6,13 +6,13 @@
 #include <sys/ptrace.h>
 #include "macro.h"
 
-typedef struct RegDescriptor {
+struct reg_descriptor {
 	reg r;
 	int dwarf;
 	char *name;
-} reg_descriptor;
+};
 
-static reg_descriptor register_descriptors[REGISTERS_NUM] = {
+static struct reg_descriptor register_descriptors[REGISTERS_NUM] = {
     {r15, 15, "r15"},
     {r14, 14, "r14"},
     {r13, 13, "r13"},
@@ -126,11 +126,11 @@ void dump_registers(pid_t pid) {
 }
 
 uint64_t read_memory(pid_t pid, uintptr_t addr) {
-    DBG_LOG("reading memory at address: 0x%lx", addr);
+	DBG_LOG("reading memory at address: 0x%lx", addr);
 	return (uint64_t)ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
 }
 
 void write_memory(pid_t pid, uintptr_t addr, uintptr_t value) {
-    DBG_LOG("writing memory at address: 0x%lx", addr);
+	DBG_LOG("writing memory at address: 0x%lx", addr);
 	ptrace(PTRACE_POKEDATA, pid, addr, value);
 }

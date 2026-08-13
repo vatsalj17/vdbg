@@ -7,8 +7,9 @@
 
 #include "registers.h"
 #include "util.h"
-#include "debugger.h"
 #include "macro.h"
+#include "symbols.h"
+#include "stepping.h"
 
 const command_entry commands[] = {
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
@@ -28,10 +29,11 @@ const command_entry commands[] = {
     {"register", cmd_reg, true, false, "Manage CPU registers"},
     {"step", cmd_step, true, true, "Single step throught source code"},
     {"stepi", cmd_stepi, true, false, "Single step through instructions"},
+    {"sections", cmd_sections, false, false, "List all the matching section headers"},
     {NULL, NULL, false, false, NULL},
 };
 
-void cmd_help(UNUSED debugger *dbg, UNUSED char **args) {
+void cmd_help(UNUSED debugger_t *dbg, UNUSED char **args) {
 	printf("\n Commands:\n");
 	for (int i = 0; commands[i].name != NULL; i++) {
 		printf("    %-10s ->  %s\n", commands[i].name, commands[i].help_text);
@@ -39,40 +41,40 @@ void cmd_help(UNUSED debugger *dbg, UNUSED char **args) {
 	printf("\n");
 }
 
-void cmd_clear(debugger *dbg, UNUSED char **args) {
+void cmd_clear(debugger_t *dbg, UNUSED char **args) {
 	remove_all_breakpoints(dbg);
 }
 
-void cmd_run(debugger *dbg, UNUSED char **args) {
+void cmd_run(debugger_t *dbg, UNUSED char **args) {
 	run(dbg);
 }
 
-void cmd_restart(debugger *dbg, UNUSED char **args) {
+void cmd_restart(debugger_t *dbg, UNUSED char **args) {
 	restart(dbg);
 }
 
-void cmd_continue(debugger *dbg, UNUSED char **args) {
+void cmd_continue(debugger_t *dbg, UNUSED char **args) {
 	continue_execution(dbg);
 }
 
-void cmd_stepi(debugger *dbg, UNUSED char **args) {
+void cmd_stepi(debugger_t *dbg, UNUSED char **args) {
 	single_step_instruction_with_breakpoint_check(dbg);
-	print_source_at_current_pc(dbg);
+	print_source_at_current_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)));
 }
 
-void cmd_step(debugger *dbg, UNUSED char **args) {
+void cmd_step(debugger_t *dbg, UNUSED char **args) {
 	step_in(dbg);
 }
 
-void cmd_finish(debugger *dbg, UNUSED char **args) {
+void cmd_finish(debugger_t *dbg, UNUSED char **args) {
 	step_out(dbg);
 }
 
-void cmd_next(debugger *dbg, UNUSED char **args) {
+void cmd_next(debugger_t *dbg, UNUSED char **args) {
 	step_over(dbg);
 }
 
-void cmd_exit(debugger *dbg, UNUSED char **args) {
+void cmd_exit(debugger_t *dbg, UNUSED char **args) {
 	if (dbg_kill_tracee(dbg)) {
 		printf("Exiting....\n");
 		dbg_free(dbg);
@@ -82,14 +84,14 @@ void cmd_exit(debugger *dbg, UNUSED char **args) {
 	}
 }
 
-void cmd_arguments(debugger *dbg, char **args) {
+void cmd_arguments(debugger_t *dbg, char **args) {
 	// ignoring the command and passing the arguments
 	add_arguments_for_tracee(dbg, args + 1);
 }
 
 // TODO: proper argument validation (but after adding source level breakpoints)
 
-void cmd_break(debugger *dbg, char **args) {
+void cmd_break(debugger_t *dbg, char **args) {
 	if (!args[1]) {
 		fprintf(stderr, BHRED "✗ " RESET "usage: break <address>\n");
 		return;
@@ -98,24 +100,38 @@ void cmd_break(debugger *dbg, char **args) {
 	set_breakpoint_at_addr(dbg, addr);
 }
 
-void cmd_delete(debugger *dbg, char **args) {
+void cmd_delete(debugger_t *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
 	unset_breakpoint_at_addr(dbg, addr);
 }
 
-void cmd_enable(debugger *dbg, char **args) {
+void cmd_enable(debugger_t *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
 	addr += dbg_get_load_address(dbg);
 	enable_breakpoint(dbg, addr);
 }
 
-void cmd_disable(debugger *dbg, char **args) {
+void cmd_disable(debugger_t *dbg, char **args) {
 	uintptr_t addr = strtoul(args[1], NULL, 16);
 	addr += dbg_get_load_address(dbg);
 	disable_breakpoint(dbg, addr);
 }
 
-void cmd_reg(debugger *dbg, char **args) {
+void cmd_sections(debugger_t *dbg, char **args) {
+	size_t size = 0;
+	char *arg = args[1];
+	struct elf_section_header *list = get_section_headers(dbg_get_symbols(dbg), arg, &size);
+	for (size_t i = 0; i < size; i++) {
+		// TODO: figure out a way to print all data in pretty way
+		Elf64_Shdr *shdr = list[i].shdr;
+		char flagbuf[20] = {0};
+		str_section_header_flag(shdr->sh_flags, flagbuf);
+		printf("-> %s\n", list[i].name);
+	}
+	free(list);
+}
+
+void cmd_reg(debugger_t *dbg, char **args) {
 	if (is_prefix(args[1], "dump")) {
 		dump_registers(dbg_get_pid(dbg));
 	} else if (is_prefix(args[1], "read")) {
@@ -128,7 +144,7 @@ void cmd_reg(debugger *dbg, char **args) {
 	}
 }
 
-void cmd_mem(debugger *dbg, char **args) {
+void cmd_mem(debugger_t *dbg, char **args) {
 	uintptr_t address = strtoul(args[2], NULL, 16);
 	if (is_prefix(args[1], "read")) {
 		printf("0x%016lx\n", read_memory(dbg_get_pid(dbg), address));
@@ -140,7 +156,7 @@ void cmd_mem(debugger *dbg, char **args) {
 	}
 }
 
-void handle_command(debugger *dbg, char *input) {
+void handle_command(debugger_t *dbg, char *input) {
 	char **args = split(input, ' ');
 	char *command = args[0];
 	if (command == NULL) {
@@ -157,7 +173,7 @@ void handle_command(debugger *dbg, char *input) {
 				        commands[i].name);
 				goto cleanup;
 			}
-			if (commands[i].requires_dwarf_symbols && !dbg_has_dwarf_symbols(dbg)) {
+			if (commands[i].requires_dwarf_symbols && !has_dwarf_symbols(dbg_get_symbols(dbg))) {
 				fprintf(stderr,
 				        BHRED "✗ " BCYN "%s:" RESET " this command requires dwarf symbols\n",
 				        commands[i].name);
@@ -177,7 +193,7 @@ void handle_command(debugger *dbg, char *input) {
 				        commands[i].name);
 				goto cleanup;
 			}
-			if (commands[i].requires_dwarf_symbols && !dbg_has_dwarf_symbols(dbg)) {
+			if (commands[i].requires_dwarf_symbols && !has_dwarf_symbols(dbg_get_symbols(dbg))) {
 				fprintf(stderr,
 				        BHRED "✗ " BCYN "%s:" RESET " this command requires dwarf symbols\n",
 				        commands[i].name);

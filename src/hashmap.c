@@ -5,7 +5,7 @@
 
 typedef struct entry {
 	uintptr_t key;
-	breakpoint *obj;
+	breakpoint_t *obj;
 	struct entry *next;
 } entry;
 
@@ -17,16 +17,16 @@ typedef struct UnorderedMap {
 	uint8_t shift_bits;
 	cleanupfunction *cf;
 	entry **elements;
-} map;
+} map_t;
 
-static inline uint32_t map_index(map *ht, uint64_t key) {
+static inline uint32_t map_index(map_t *ht, uint64_t key) {
 	uint32_t result = (uint32_t)((key * 11400714819323198485lu) >> ht->shift_bits);
 	return result;
 }
 
-map *map_init(uint32_t size, cleanupfunction *cf) {
+map_t *map_init(uint32_t size, cleanupfunction *cf) {
 	if (size == 0) return NULL;
-	map *ht = malloc(sizeof(map));
+	map_t *ht = malloc(sizeof(map_t));
 	ht->size = size;
 	if (cf) {
 		ht->cf = cf;
@@ -40,7 +40,7 @@ map *map_init(uint32_t size, cleanupfunction *cf) {
 	return ht;
 }
 
-bool map_insert(map *ht, uintptr_t key, breakpoint *obj) {
+bool map_insert(map_t *ht, uintptr_t key, breakpoint_t *obj) {
 	if (ht == NULL || obj == NULL) return false;
 	if (map_lookup(ht, key) != NULL) return false;
 	size_t index = map_index(ht, key);
@@ -56,7 +56,7 @@ bool map_insert(map *ht, uintptr_t key, breakpoint *obj) {
 	return true;
 }
 
-void *map_lookup(map *ht, uintptr_t key) {
+void *map_lookup(map_t *ht, uintptr_t key) {
 	if (ht == NULL) return NULL;
 	size_t index = map_index(ht, key);
 	entry *temp = ht->elements[index];
@@ -67,7 +67,7 @@ void *map_lookup(map *ht, uintptr_t key) {
 	return temp->obj;
 }
 
-void map_delete(map *ht, uintptr_t key) {
+void map_delete(map_t *ht, uintptr_t key) {
 	if (ht == NULL) return;
 	size_t index = map_index(ht, key);
 	entry *temp = ht->elements[index];
@@ -87,7 +87,7 @@ void map_delete(map *ht, uintptr_t key) {
 	free(temp);
 }
 
-void map_free(map *ht) {
+void map_free(map_t *ht) {
 	if (ht == NULL) return;
 	for (size_t i = 0; i < ht->size; i++) {
 		while (ht->elements[i]) {

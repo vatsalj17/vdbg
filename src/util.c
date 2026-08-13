@@ -112,3 +112,22 @@ char *str_sigsegv_code(int si_code) {
 	DBG_ERR("SIGSEGV si_code: %d", si_code);
 	return "Unknown Code for SIGSEGV";
 }
+
+void str_section_header_flag(Elf64_Xword flag, char flagbuf[20]) {
+	char *cp = flagbuf;
+	if (flag & SHF_WRITE) *cp++ = 'W';
+	if (flag & SHF_ALLOC) *cp++ = 'A';
+	if (flag & SHF_EXECINSTR) *cp++ = 'X';
+	if (flag & SHF_MERGE) *cp++ = 'M';
+	if (flag & SHF_STRINGS) *cp++ = 'S';
+	if (flag & SHF_INFO_LINK) *cp++ = 'I';
+	if (flag & SHF_LINK_ORDER) *cp++ = 'L';
+	if (flag & SHF_OS_NONCONFORMING) *cp++ = 'N';
+	if (flag & SHF_GROUP) *cp++ = 'G';
+	if (flag & SHF_TLS) *cp++ = 'T';
+	if (flag & SHF_COMPRESSED) *cp++ = 'C';
+	if (flag & SHF_ORDERED) *cp++ = 'O';
+	if (flag & SHF_EXCLUDE) *cp++ = 'E';
+	if (flag & SHF_GNU_RETAIN) *cp++ = 'R';
+	*cp = '\0';
+}

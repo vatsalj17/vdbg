@@ -3,7 +3,7 @@
 
 #include "debugger.h"
 
-typedef void (*cmd_handler)(debugger *dbg, char **args);
+typedef void (*cmd_handler)(debugger_t *dbg, char **args);
 
 typedef struct {
 	const char *name;
@@ -15,23 +15,24 @@ typedef struct {
 
 extern const command_entry commands[];
 
-void handle_command(debugger *dbg, char *input);
-void cmd_run(debugger *dbg, char **args);
-void cmd_restart(debugger *dbg, char **args);
-void cmd_break(debugger *dbg, char **args);
-void cmd_delete(debugger *dbg, char **args);
-void cmd_enable(debugger *dbg, char **args);
-void cmd_disable(debugger *dbg, char **args);
-void cmd_clear(debugger *dbg, char **args);
-void cmd_continue(debugger *dbg, char **args);
-void cmd_arguments(debugger *dbg, char **args);
-void cmd_reg(debugger *dbg, char **args);
-void cmd_mem(debugger *dbg, char **args);
-void cmd_stepi(debugger *dbg, char **args);
-void cmd_step(debugger *dbg, char **args);
-void cmd_finish(debugger *dbg, char **args);
-void cmd_next(debugger *dbg, char **args);
-void cmd_exit(debugger *dbg, char **args);
-void cmd_help(debugger *dbg, char **args);
+void handle_command(debugger_t *dbg, char *input);
+void cmd_run(debugger_t *dbg, char **args);
+void cmd_restart(debugger_t *dbg, char **args);
+void cmd_break(debugger_t *dbg, char **args);
+void cmd_delete(debugger_t *dbg, char **args);
+void cmd_enable(debugger_t *dbg, char **args);
+void cmd_disable(debugger_t *dbg, char **args);
+void cmd_clear(debugger_t *dbg, char **args);
+void cmd_continue(debugger_t *dbg, char **args);
+void cmd_arguments(debugger_t *dbg, char **args);
+void cmd_reg(debugger_t *dbg, char **args);
+void cmd_mem(debugger_t *dbg, char **args);
+void cmd_stepi(debugger_t *dbg, char **args);
+void cmd_step(debugger_t *dbg, char **args);
+void cmd_finish(debugger_t *dbg, char **args);
+void cmd_next(debugger_t *dbg, char **args);
+void cmd_exit(debugger_t *dbg, char **args);
+void cmd_help(debugger_t *dbg, char **args);
+void cmd_sections(debugger_t *dbg, char **args);
 
 #endif

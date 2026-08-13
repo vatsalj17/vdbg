@@ -6,7 +6,6 @@
 #ifdef DEBUG
 #define DBG_LOG(fmt, ...) fprintf(stderr, "[DEBUG](%s) " fmt "\n", __func__, ##__VA_ARGS__)
 #else
-// writing something to prevent empty-body, i.e only semicolon, without any block of code
 #define DBG_LOG(fmt, ...)                                                                          \
 	do {                                                                                           \
 	} while (0)
@@ -30,7 +29,7 @@
 		abort();                                                                                   \
 	} while (0)
 
-#define DWFL_SANITY_CHECK(var, func)                                                                      \
+#define DWFL_SANITY_CHECK(var, func)                                                               \
 	do {                                                                                           \
 		if (var == NULL) {                                                                         \
 			const char *msg = dwfl_errmsg(dwfl_errno());                                           \

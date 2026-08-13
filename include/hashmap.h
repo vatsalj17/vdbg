@@ -5,13 +5,13 @@
 #include <stdbool.h>
 #include "breakpoint.h"
 
-typedef void cleanupfunction(breakpoint*);
-typedef struct UnorderedMap map;
+typedef void cleanupfunction(breakpoint_t *);
+typedef struct UnorderedMap map_t;
 
-map* map_init(uint32_t size, cleanupfunction* cf);
-bool map_insert(map* ht, uintptr_t key, breakpoint* obj);
-void* map_lookup(map* ht, uintptr_t key);
-void map_delete(map* ht, uintptr_t key);
-void map_free(map* ht);
+map_t *map_init(uint32_t size, cleanupfunction *cf);
+bool map_insert(map_t *ht, uintptr_t key, breakpoint_t *obj);
+void *map_lookup(map_t *ht, uintptr_t key);
+void map_delete(map_t *ht, uintptr_t key);
+void map_free(map_t *ht);
 
 #endif

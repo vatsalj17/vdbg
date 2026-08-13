@@ -22,29 +22,23 @@ typedef struct BreakPoint {
 	bool enabled;
 	uint8_t saved_data;
 	bool is_temp;
-} breakpoint;
+} breakpoint_t;
 
-typedef struct ListOfBreakpoints {
-	uintptr_t *bps;
-	size_t no_of_bp;
-	size_t capacity;
-} bp_list;
-
-bp_list *list_queue_init(void) {
-	bp_list *new = malloc(sizeof(bp_list));
+struct bp_list *list_queue_init(void) {
+	struct bp_list *new = malloc(sizeof(struct bp_list));
 	new->capacity = INITIAL_CAPACITY;
 	new->bps = malloc(new->capacity * sizeof(uintptr_t));
 	new->no_of_bp = 0;
 	return new;
 }
 
-void list_free(bp_list *list) {
+void list_free(struct bp_list *list) {
 	assert(list);
 	free(list->bps);
 	free(list);
 }
 
-void add_breakpoint_as_pending(bp_list *list, uintptr_t addr) {
+void add_breakpoint_as_pending(struct bp_list *list, uintptr_t addr) {
 	assert(list);
 	if (list->no_of_bp == list->capacity) {
 		size_t new_cap = (size_t)((double)list->capacity * 1.7);
@@ -59,7 +53,7 @@ void add_breakpoint_as_pending(bp_list *list, uintptr_t addr) {
 	list->bps[list->no_of_bp++] = addr;
 }
 
-void delete_breakpoint_from_pending(bp_list *list, uintptr_t addr) {
+void delete_breakpoint_from_pending(struct bp_list *list, uintptr_t addr) {
 	assert(list);
 	for (size_t i = 0; i < list->no_of_bp; i++) {
 		if (addr == list->bps[i]) {
@@ -73,20 +67,20 @@ void delete_breakpoint_from_pending(bp_list *list, uintptr_t addr) {
 	}
 }
 
-uintptr_t list_addr_by_index(bp_list *list, size_t index) {
+uintptr_t list_addr_by_index(struct bp_list *list, size_t index) {
 	assert(list);
 	if (index >= list->no_of_bp) return END_OF_LIST;
 	return list->bps[index];
 }
 
-void list_clear(bp_list *list) {
+void list_clear(struct bp_list *list) {
 	assert(list);
 	list->no_of_bp = 0;
 }
 
-breakpoint *bp_init(pid_t pid, uintptr_t addr, bool is_temp) {
-	DBG_LOG("Intializing breakpoint at 0x%lx", addr);
-	breakpoint *new = malloc(sizeof(breakpoint));
+breakpoint_t *bp_init(pid_t pid, uintptr_t addr, bool is_temp) {
+	DBG_LOG("Intializing breakpoint_t at 0x%lx", addr);
+	breakpoint_t *new = malloc(sizeof(breakpoint_t));
 	new->pid = pid;
 	new->addr = addr;
 	new->enabled = false;
@@ -94,27 +88,27 @@ breakpoint *bp_init(pid_t pid, uintptr_t addr, bool is_temp) {
 	return new;
 }
 
-bool bp_is_temp(breakpoint *bp) {
+bool bp_is_temp(breakpoint_t *bp) {
 	assert(bp);
 	return bp->is_temp;
 }
 
-void bp_set_pid(breakpoint *bp, pid_t pid) {
+void bp_set_pid(breakpoint_t *bp, pid_t pid) {
 	assert(bp);
 	bp->pid = pid;
 }
 
-bool bp_is_enabled(breakpoint *bp) {
+bool bp_is_enabled(breakpoint_t *bp) {
 	assert(bp);
 	return bp->enabled;
 }
 
-uintptr_t bp_get_addr(breakpoint *bp) {
+uintptr_t bp_get_addr(breakpoint_t *bp) {
 	assert(bp);
 	return bp->addr;
 }
 
-void bp_enable(breakpoint *bp) {
+void bp_enable(breakpoint_t *bp) {
 	if (bp_is_enabled(bp)) {
 		DBG_LOG("bp_enable called for addr: 0x%lx which is already enabled", bp->addr);
 		return;
@@ -132,7 +126,7 @@ void bp_enable(breakpoint *bp) {
 	bp->enabled = true;
 }
 
-void bp_disable(breakpoint *bp) {
+void bp_disable(breakpoint_t *bp) {
 	if (!bp_is_enabled(bp)) return;
 	DBG_LOG("bp_disable called for addr: 0x%lx", bp->addr);
 	if (kill(bp->pid, 0) != 0) {
@@ -150,7 +144,7 @@ void bp_disable(breakpoint *bp) {
 	bp->enabled = false;
 }
 
-void bp_free(breakpoint *bp) {
+void bp_free(breakpoint_t *bp) {
 	assert(bp);
 	free(bp);
 }

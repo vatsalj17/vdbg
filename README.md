@@ -12,6 +12,7 @@ A custom, lightweight Linux debugger built from scratch in C using `ptrace`.
 * **Tab Completion:** readline-backed command completion.
 * **DWARF Support:** Parses ELF/DWARF symbols via `libelf` and `libdw` to display source lines automatically when hitting a breakpoint.
 * **Symbol Validation:** Validates the executable and warns if debug symbols are missing.
+* **Command Usability:** Supports command repetition on empty input and executing commands via unique prefixes (e.g., `c` for `continue`).
 
 ## Under the Hood
 * **The Engine (`debugger.c`):** Acts as a state machine, catching signals (`SIGTRAP`, `SIGSEGV`, `SIGABRT`) and routing execution control, using temporary breakpoints to step out of functions.
@@ -48,8 +49,9 @@ make debug    # debug build (symbols + -DDEBUG)
 | `continue` | Resume execution |
 | `stepi` | Single step through instructions |
 | `step` | Single step through source code |
-| `next` | Step over function calls |
-| `finish` | Skip/step out of the current function |
+| `next` | Step over current instruction |
+| `finish` | Skip the current function |
+| `sections` | List all the matching section headers |
 | `register dump` | Dump all x86_64 register states |
 | `register read <reg>` | Read a register value |
 | `register write <reg> <val>` | Write a register value |
@@ -61,5 +63,7 @@ make debug    # debug build (symbols + -DDEBUG)
 
 ## Working On
 * Source-level breakpoints (by file:line or function name)
+* Stack unwinding
+* Variable inspection
 * Dynamic loading of shared librarires
 * Disassembly support

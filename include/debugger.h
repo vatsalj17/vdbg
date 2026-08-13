@@ -5,39 +5,37 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct DBG debugger;
+#include "symbols.h"
+#include "hashmap.h"
 
-typedef enum Debugger_State {
-    ACTIVE,
-    NOT_ACTIVE
-} dbg_state;
+typedef struct Debugger debugger_t;
 
-debugger* dbg_init(const char* pname);
-void dbg_start(debugger* dbg);
-pid_t dbg_get_pid(debugger* dbg);
-uintptr_t dbg_get_load_address(debugger *dbg);
-bool dbg_is_active(debugger *dbg);
-bool dbg_has_dwarf_symbols(debugger *dbg);
-bool dbg_kill_tracee(debugger *dbg);
-void dbg_free(debugger* dbg);
+typedef enum Debugger_State { ACTIVE, NOT_ACTIVE } dbg_state;
 
-uintptr_t offset_load_address(debugger *dbg, uintptr_t addr);
+debugger_t *dbg_init(const char *pname);
+void dbg_start(debugger_t *dbg);
+pid_t dbg_get_pid(debugger_t *dbg);
+uintptr_t dbg_get_load_address(debugger_t *dbg);
+map_t *dbg_get_breakpoints(debugger_t *dbg);
+bool dbg_is_active(debugger_t *dbg);
+dbg_symbols *dbg_get_symbols(debugger_t *dbg);
+bool dbg_kill_tracee(debugger_t *dbg);
+void dbg_free(debugger_t *dbg);
 
-void set_breakpoint_at_addr(debugger* dbg, uintptr_t addr);
-void unset_breakpoint_at_addr(debugger *dbg, uintptr_t addr);
-void enable_breakpoint(debugger *dbg, uintptr_t addr);
-void disable_breakpoint(debugger *dbg, uintptr_t addr);
-void disable_all_breakpoints(debugger *dbg);
-void single_step_instruction_with_breakpoint_check(debugger *dbg);
-void remove_all_breakpoints(debugger *dbg);
+void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr);
+void unset_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr);
+void enable_breakpoint(debugger_t *dbg, uintptr_t addr);
+void disable_breakpoint(debugger_t *dbg, uintptr_t addr);
+void disable_all_breakpoints(debugger_t *dbg);
+void remove_all_breakpoints(debugger_t *dbg);
+bool set_temp_breakpoint(debugger_t *dbg, uintptr_t running_addr);
+void unset_temp_breakpoint(debugger_t *dbg, uintptr_t running_addr);
 
-void run(debugger *dbg);
-void restart(debugger *dbg);
-void print_source_at_current_pc(debugger *dbg);
-void add_arguments_for_tracee(debugger *dbg, char **args);
-void step_in(debugger *dbg);
-void step_out(debugger *dbg);
-void step_over(debugger *dbg);
-void continue_execution(debugger* dbg);
+void wait_for_signal(debugger_t *dbg);
+void run(debugger_t *dbg);
+void restart(debugger_t *dbg);
+void add_arguments_for_tracee(debugger_t *dbg, char **args);
+char **get_symbols(debugger_t *dbg, char *sym_name);
+void continue_execution(debugger_t *dbg);
 
 #endif
