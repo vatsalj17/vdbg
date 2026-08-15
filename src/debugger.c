@@ -68,6 +68,8 @@ debugger_t *dbg_init(const char *pname) {
 	new->pending_signal = 0;
 	new->load_address = 0; // initialized for static files initially
 
+	new->syms = symbols_init(pname);
+
 	return new;
 }
 
@@ -487,6 +489,7 @@ void dbg_free(debugger_t *dbg) {
 	list_free(dbg->pending_breakpoints);
 	for (int i = 1; dbg->args[i] != NULL; i++)
 		free(dbg->args[i]);
+	symbols_free(dbg->syms);
 	free(dbg->process_name);
 	free(dbg->args);
 	free(dbg);

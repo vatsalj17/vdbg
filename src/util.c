@@ -131,3 +131,46 @@ void str_section_header_flag(Elf64_Xword flag, char flagbuf[20]) {
 	if (flag & SHF_GNU_RETAIN) *cp++ = 'R';
 	*cp = '\0';
 }
+
+const char *str_section_header_type(Elf64_Word type) {
+	// elfutils hasn't made macro for type GNU_SFRAME so i have to 
+	// explicitely define it as it was in binutils
+#define SHT_GNU_SFRAME SHT_GNU_ATTRIBUTES - 1
+	switch (type) {
+#define TYPECASE(name) case (SHT_##name): return #name
+	TYPECASE(NULL);
+	TYPECASE(PROGBITS);
+	TYPECASE(SYMTAB);
+	TYPECASE(STRTAB);
+	TYPECASE(RELA);
+	TYPECASE(HASH);
+	TYPECASE(DYNAMIC);
+	TYPECASE(NOTE);
+	TYPECASE(NOBITS);
+	TYPECASE(REL);
+	TYPECASE(SHLIB);
+	TYPECASE(DYNSYM);
+	TYPECASE(INIT_ARRAY);
+	TYPECASE(FINI_ARRAY);
+	TYPECASE(PREINIT_ARRAY);
+	TYPECASE(GROUP);
+	TYPECASE(SYMTAB_SHNDX);
+	TYPECASE(RELR);
+	TYPECASE(NUM);
+	TYPECASE(GNU_SFRAME);
+	TYPECASE(GNU_ATTRIBUTES);
+	TYPECASE(GNU_HASH);
+	TYPECASE(GNU_LIBLIST);
+	TYPECASE(CHECKSUM);
+	TYPECASE(GNU_verdef);
+	TYPECASE(GNU_verneed);
+	TYPECASE(GNU_versym);
+	default: {
+		// DBG_ERR("Unknown type: %u\n", type);
+		return "UNKNOWN TYPE"; 
+		// FIX: use the HI and LO in the types to properly handle all types
+		// handle LOOS HIOS LOPROC HIPROC LOUSER HIUSER
+	}
+	}
+}
+

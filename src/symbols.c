@@ -43,7 +43,7 @@ static bool check_for_debug_symbols(dbg_symbols *sym) {
 	return false;
 }
 
-dbg_symbols *symbols_init(char *pname) {
+dbg_symbols *symbols_init(const char *pname) {
 	dbg_symbols *new = malloc(sizeof(dbg_symbols));
 	struct stat file_stats;
 	stat(pname, &file_stats);
@@ -94,9 +94,17 @@ struct elf_section_header *get_section_headers(dbg_symbols *sym, char *header_na
 		if (get_all || strstr(name, header_name) != NULL) {
 			header_list[list_index].name = name;
 			header_list[list_index].shdr = shdr;
+			header_list[list_index].index = elf_ndxscn(scn);
 			list_index++;
 			// DBG_LOG("shdr type: %u\n", shdr->sh_type);
 		}
+	}
+	if (get_all) {
+		printf("\nTotal %zu sections\n\n", list_index);
+	} else if (list_index) {
+		printf("\nGot %zu sections matching \"%s\"\n\n", list_index, header_name);
+	} else {
+		printf("\nNo sections matching \"%s\" found\n\n", header_name);
 	}
 	*return_size = list_index;
 	return header_list;
@@ -104,6 +112,7 @@ struct elf_section_header *get_section_headers(dbg_symbols *sym, char *header_na
 
 char **get_symbols(UNUSED debugger_t *sym, UNUSED char *sym_name) {
 	// TODO: incomplete
+	Elf64_Sym a = {0};
 	return NULL;
 }
 

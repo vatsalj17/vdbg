@@ -121,12 +121,29 @@ void cmd_sections(debugger_t *dbg, char **args) {
 	size_t size = 0;
 	char *arg = args[1];
 	struct elf_section_header *list = get_section_headers(dbg_get_symbols(dbg), arg, &size);
+	if (size == 0) {
+		free(list);
+		return;
+	}
+	printf("[Nr] Name                 Type           Addr             Offset   Size     Flags Es "
+	       "Link Info Align\n");
 	for (size_t i = 0; i < size; i++) {
-		// TODO: figure out a way to print all data in pretty way
 		Elf64_Shdr *shdr = list[i].shdr;
 		char flagbuf[20] = {0};
 		str_section_header_flag(shdr->sh_flags, flagbuf);
-		printf("-> %s\n", list[i].name);
+		// char *type =
+		printf("[%02zu] %-20s %-14s %016lx %08lx %08lx %5s %2lu %4u %4u %5lu\n",
+		       list[i].index,
+		       list[i].name,
+		       str_section_header_type(shdr->sh_type),
+		       shdr->sh_addr,
+		       shdr->sh_offset,
+		       shdr->sh_size,
+		       flagbuf,
+		       shdr->sh_entsize,
+		       shdr->sh_link,
+		       shdr->sh_info,
+		       shdr->sh_addralign);
 	}
 	free(list);
 }
