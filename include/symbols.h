@@ -7,16 +7,10 @@
 
 typedef struct dbg_symbols dbg_symbols;
 
-struct elf_section_header {
-	char *name;
-	size_t index;
-	Elf64_Shdr *shdr;
-};
-
 dbg_symbols *symbols_init(const char *pname);
 void symbols_free(dbg_symbols *sym);
-struct elf_section_header *get_section_headers(dbg_symbols *sym, char *header_name,
-                                               size_t *return_size);
+void print_section_headers(dbg_symbols *sym, char *header_name);
+void print_symbols_table(dbg_symbols *sym, char *sym_name);
 bool has_dwarf_symbols(dbg_symbols *sym);
 Dwfl *get_dwarf_data(dbg_symbols *sym);
 

@@ -34,5 +34,6 @@ void cmd_next(debugger_t *dbg, char **args);
 void cmd_exit(debugger_t *dbg, char **args);
 void cmd_help(debugger_t *dbg, char **args);
 void cmd_sections(debugger_t *dbg, char **args);
+void cmd_symbols(debugger_t *dbg, char **args);
 
 #endif

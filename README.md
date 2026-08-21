@@ -25,8 +25,12 @@ Requires `gcc`, `make`, `libreadline`, and `elfutils`.
 ```bash
 git clone https://github.com/vatsalj17/vdbg.git
 cd vdbg
+```
+
+Now you have 3 options:- 
+```bash
 make          # dev build (ASan + UBSan)
-make build    # release build (PIE, relro, now)
+make build    # release build (PIE, relro, now) *recommended*
 make debug    # debug build (symbols + -DDEBUG)
 ```
 
@@ -65,5 +69,15 @@ make debug    # debug build (symbols + -DDEBUG)
 * Source-level breakpoints (by file:line or function name)
 * Stack unwinding
 * Variable inspection
-* Dynamic loading of shared librarires
+* Dynamic loading of shared libraries
 * Disassembly support
+* Some binary static analysis features
+   * [ ] elf header
+   * [x] sections
+   * [x] symbols
+   * [ ] functions
+   * [ ] program headers
+   * [ ] strings
+   * [ ] relocations
+   * [ ] plt/got
+

@@ -35,7 +35,6 @@ void wait_for_signal(debugger_t *dbg);
 void run(debugger_t *dbg);
 void restart(debugger_t *dbg);
 void add_arguments_for_tracee(debugger_t *dbg, char **args);
-char **get_symbols(debugger_t *dbg, char *sym_name);
 void continue_execution(debugger_t *dbg);
 
 #endif

@@ -1,5 +1,6 @@
 #include "symbols.h"
 
+#include <assert.h>
 #include <dwarf.h>
 #include <libelf.h>
 #include <elfutils/libdwfl.h>
@@ -10,9 +11,10 @@
 #include <string.h>
 #include <sys/ptrace.h>
 
-#include "debugger.h"
 #include "macro.h"
 #include "util.h"
+
+#define INITIAL_CAP 100
 
 // for initializing dwfl
 static const Dwfl_Callbacks callbacks = {
@@ -26,6 +28,7 @@ struct dbg_symbols {
 	Dwfl *dwarf_data;       // dwarf parsing
 	bool has_dwarf_symbols; // check for printing the src code
 	time_t mtime;           // last modified to time of the executable
+	ssize_t strtab_idx;     // string table index saved so that it can accessed anytime
 };
 
 // returns true if debug symbols are present in the code
@@ -67,6 +70,7 @@ dbg_symbols *symbols_init(const char *pname) {
 	}
 
 	new->has_dwarf_symbols = check_for_debug_symbols(new);
+	new->strtab_idx = -1;
 
 	return new;
 }
@@ -79,41 +83,181 @@ Dwfl *get_dwarf_data(dbg_symbols *sym) {
 	return sym->dwarf_data;
 }
 
-struct elf_section_header *get_section_headers(dbg_symbols *sym, char *header_name,
-                                               size_t *return_size) {
+static inline const char *get_section_name(Elf *elf, size_t scn_idx) {
+	Elf64_Ehdr *ehdr = elf64_getehdr(elf);
+	Elf_Scn *scn = elf_getscn(elf, scn_idx);
+	if (!scn) return "ABS";
+	Elf64_Shdr *shdr = elf64_getshdr(scn);
+	assert(shdr);
+	return elf_strptr(elf, ehdr->e_shstrndx, shdr->sh_name);
+}
+
+Elf_Scn **get_sections(dbg_symbols *sym, char *section_name, size_t *return_size) {
 	bool get_all = false;
-	if (!header_name) get_all = true;
+	if (!section_name) get_all = true;
 	Elf64_Ehdr *ehdr = elf64_getehdr(sym->elf_data);
 	Elf_Scn *scn = NULL;
 	size_t initialcap = 100;
-	struct elf_section_header *header_list = malloc(initialcap * sizeof(struct elf_section_header));
+	Elf_Scn **section_list = malloc(initialcap * sizeof(Elf_Scn *));
 	size_t list_index = 0;
 	while ((scn = elf_nextscn(sym->elf_data, scn)) != NULL) {
 		Elf64_Shdr *shdr = elf64_getshdr(scn);
 		char *name = elf_strptr(sym->elf_data, ehdr->e_shstrndx, shdr->sh_name);
-		if (get_all || strstr(name, header_name) != NULL) {
-			header_list[list_index].name = name;
-			header_list[list_index].shdr = shdr;
-			header_list[list_index].index = elf_ndxscn(scn);
-			list_index++;
+		if (sym->strtab_idx == -1) {
+			if (strncmp(name, ".strtab", 7) == 0) {
+				sym->strtab_idx = (ssize_t)elf_ndxscn(scn);
+			}
+		}
+		if (get_all || strstr(name, section_name) != NULL) {
+			section_list[list_index++] = scn;
 			// DBG_LOG("shdr type: %u\n", shdr->sh_type);
 		}
 	}
-	if (get_all) {
-		printf("\nTotal %zu sections\n\n", list_index);
-	} else if (list_index) {
-		printf("\nGot %zu sections matching \"%s\"\n\n", list_index, header_name);
+	*return_size = list_index;
+	return section_list;
+}
+
+void print_section_headers(dbg_symbols *sym, char *header_name) {
+	Elf64_Ehdr *ehdr = elf64_getehdr(sym->elf_data);
+	size_t size = 0;
+	Elf_Scn **section_list = get_sections(sym, header_name, &size);
+
+	if (!header_name) {
+		printf("\nTotal %zu sections\n\n", size);
+	} else if (size) {
+		printf("\nGot %zu sections matching \"%s\"\n\n", size, header_name);
 	} else {
 		printf("\nNo sections matching \"%s\" found\n\n", header_name);
 	}
-	*return_size = list_index;
-	return header_list;
+	if (size == 0) {
+		free(section_list);
+		return;
+	}
+
+	printf("[Nr] Name                 Type           Addr             Offset   Size     Flags Es "
+	       "Link Info Align\n");
+
+	for (size_t i = 0; i < size; i++) {
+		Elf64_Shdr *shdr = elf64_getshdr(section_list[i]);
+		char *name = elf_strptr(sym->elf_data, ehdr->e_shstrndx, shdr->sh_name);
+		size_t index = elf_ndxscn(section_list[i]);
+		char flagbuf[20] = {0};
+		str_section_header_flag(shdr->sh_flags, flagbuf);
+		// char *type =
+		printf("[%02zu] %-20s %-14s %016lx %08lx %08lx %5s %2lu %4u %4u %5lu\n",
+		       index,
+		       name,
+		       str_section_header_type(shdr->sh_type),
+		       shdr->sh_addr,
+		       shdr->sh_offset,
+		       shdr->sh_size,
+		       flagbuf,
+		       shdr->sh_entsize,
+		       shdr->sh_link,
+		       shdr->sh_info,
+		       shdr->sh_addralign);
+	}
+
+	free(section_list);
 }
 
-char **get_symbols(UNUSED debugger_t *sym, UNUSED char *sym_name) {
-	// TODO: incomplete
-	Elf64_Sym a = {0};
-	return NULL;
+Elf64_Sym *get_symbols(dbg_symbols *sym, char *sym_name, Elf_Scn *scn, size_t strtab_idx,
+                       size_t *return_size, bool *to_free) {
+	Elf_Data *data = elf_getdata(scn, NULL);
+	Elf64_Sym *symbols = data->d_buf;
+	size_t no_of_symbols = data->d_size / sizeof(Elf64_Sym);
+
+	if (!sym_name) {
+		*return_size = no_of_symbols;
+		*to_free = false;
+		return symbols;
+	}
+	size_t idx = 0;
+	Elf64_Sym *symbols_list = malloc(no_of_symbols * sizeof(Elf64_Sym));
+
+	char *name;
+	for (size_t j = 0; j < no_of_symbols; j++) {
+		Elf64_Sym symbol = symbols[j];
+		name = elf_strptr(sym->elf_data, strtab_idx, symbol.st_name);
+		if (strstr(name, sym_name)) {
+			symbols_list[idx++] = symbol;
+		}
+	}
+
+	*to_free = true;
+	*return_size = idx;
+	return symbols_list;
+}
+
+static inline void print_symbols_table_header(size_t sym_list_size, char *sym_name) {
+	if (sym_list_size) {
+		if (!sym_name) {
+			printf("\nFound %zu symbols.\n\n", sym_list_size);
+		} else {
+			printf("\nFound %zu symbols matching \"%s\".\n\n", sym_list_size, sym_name);
+		}
+		printf("%s  %-40s %-7s %-6s %-18s %-4s %-9s %-10s\n",
+		       "IDX",
+		       "NAME",
+		       "TYPE",
+		       "BIND",
+		       "VALUE",
+		       "SIZE",
+		       "VIS",
+		       "SECTION");
+	} else {
+		if (!sym_name) {
+			printf("No symbols found in .symtab\n");
+		} else {
+			printf("No Found symbols matching \"%s\"\n", sym_name);
+		}
+	}
+}
+
+void print_symbols_table(dbg_symbols *sym, char *sym_name) {
+	size_t size = 0;
+	Elf_Scn **section_list = get_sections(sym, "sym", &size);
+	if (size == 0) {
+		printf("No symbols table found\n");
+		free(section_list);
+		return;
+	}
+
+	for (size_t i = 0; i < size; i++) {
+		Elf_Scn *scn = section_list[i];
+		Elf64_Shdr *shdr = elf64_getshdr(scn);
+		if (shdr->sh_type == SHT_SYMTAB) {
+			size_t sym_list_size = 0;
+			bool to_free;
+			assert(sym->strtab_idx != -1);
+			Elf64_Sym *symbols_list =
+			    get_symbols(sym, sym_name, scn, (size_t)sym->strtab_idx, &sym_list_size, &to_free);
+
+            print_symbols_table_header(sym_list_size, sym_name);
+			for (size_t j = 0; j < sym_list_size; j++) {
+				Elf64_Sym symbol = symbols_list[j];
+				Elf64_Word nameidx = symbol.st_name;
+				char *name = elf_strptr(sym->elf_data, (size_t)sym->strtab_idx, nameidx);
+				unsigned char type = ELF64_ST_TYPE(symbol.st_info);
+				unsigned char bind = ELF64_ST_BIND(symbol.st_info);
+				unsigned char visibility = symbol.st_other;
+				printf("%02zu:  %-40s %-7s %-6s 0x%016lx %4lu %-9s %-10s\n",
+				       j,
+				       name,
+				       str_symbol_type(type),
+				       str_symbol_bind(bind),
+				       symbol.st_value,
+				       symbol.st_size,
+				       str_symbol_visibility(visibility),
+				       (symbol.st_shndx) ? get_section_name(sym->elf_data, symbol.st_shndx)
+				                         : "UNDEF");
+			}
+			if (to_free) free(symbols_list);
+
+		}
+	}
+
+	free(section_list);
 }
 
 // setting up dwfl to read modules later on in the code

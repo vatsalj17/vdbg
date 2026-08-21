@@ -11,5 +11,8 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context);
 char *str_sigsegv_code(int si_code);
 void str_section_header_flag(Elf64_Xword flag, char flagbuf[20]);
 const char *str_section_header_type(Elf64_Word type);
+const char *str_symbol_type(unsigned char type);
+const char *str_symbol_bind(unsigned char bind);
+const char *str_symbol_visibility(unsigned char vis);
 
 #endif
