@@ -49,6 +49,11 @@ bool is_prefix(const char *input, const char *command) {
 	return false;
 }
 
+static inline void print_line_prefix(unsigned line_no, unsigned target_line) {
+    bool is_target = (line_no == target_line);
+    printf("  %s%3u | %s", is_target ? HGRN : HBLK, line_no, is_target ? RESET : "");
+}
+
 void print_source(const char *file_name, unsigned line, unsigned lines_context) {
 	assert(line);
 	assert(lines_context);
@@ -67,18 +72,18 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
 	// printf("endline: %u\n", end_line);
 	// printf("end_line = %u + %u + ((%u < %u) ? %u - %u : 0) + 1\n", line, lines_context, line, lines_context, lines_context, line);
 
-	char c;
+	int c;
 	unsigned current_line = 1u;
-	while (current_line < start_line && (c = (char)fgetc(f)) != EOF) {
+	while (current_line < start_line && (c = fgetc(f)) != EOF) {
 		if (c == '\n') current_line++;
 	}
 
-	printf("\n  %s%3d | ", (current_line == line) ? HGRN "> " GRN : HBLK "  ", current_line);
-	while (current_line < end_line && (c = (char)fgetc(f)) != EOF) {
+    print_line_prefix(current_line, line);
+	while (current_line < end_line && (c = fgetc(f)) != EOF) {
 		putc(c, stdout);
 		if (c == '\n') {
 			current_line++;
-			printf("  %s%3d | ", (current_line == line) ? BGRN "> " GRN : HBLK "  ", current_line);
+            print_line_prefix(current_line, line);
 		}
 	}
 	printf(RESET "\r          \n");

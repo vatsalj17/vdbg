@@ -22,8 +22,9 @@ dbg_symbols *dbg_get_symbols(debugger_t *dbg);
 bool dbg_kill_tracee(debugger_t *dbg);
 void dbg_free(debugger_t *dbg);
 
-void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr);
+void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr, bool quiet);
 void unset_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr);
+void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name);
 void enable_breakpoint(debugger_t *dbg, uintptr_t addr);
 void disable_breakpoint(debugger_t *dbg, uintptr_t addr);
 void disable_all_breakpoints(debugger_t *dbg);

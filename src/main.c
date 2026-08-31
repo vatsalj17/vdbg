@@ -7,7 +7,7 @@
 #include "macro.h"
 
 // TODO: loading of dynamic libraires
-// TODO: add disassembly using capstone
+// TODO: add disassembly feature
 
 int main(int argc, char **argv) {
 #if defined(__linux__) && defined(__x86_64__)

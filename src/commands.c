@@ -14,14 +14,15 @@
 const command_entry commands[] = {
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
     {"break", cmd_break, false, false, "Set breakpoint"},
-    {"clear", cmd_clear, false, false, "Clear all breakpoints"},
     {"continue", cmd_continue, true, false, "Resume execution"},
+    {"clear", cmd_clear, false, false, "Clear all breakpoints"},
     {"delete", cmd_delete, false, false, "Delete a specific breakpoint"},
     {"disable", cmd_disable, true, false, "Disable any breakpoint"},
     {"exit", cmd_exit, false, false, "Exit the debugger"},
     {"enable", cmd_enable, true, false, "Enable any breakpoint"},
     {"finish", cmd_finish, true, true, "Skip the current function"},
     {"help", cmd_help, false, false, "Show this menu"},
+    {"header", cmd_header, false, false, "Print ELF header"},
     {"memory", cmd_mem, true, false, "Manipulate memory at address"},
     {"next", cmd_next, true, true, "Step over current instruction"},
     {"run", cmd_run, false, false, "Start tracee"},
@@ -75,6 +76,10 @@ void cmd_next(debugger_t *dbg, UNUSED char **args) {
 	step_over(dbg);
 }
 
+void cmd_header(debugger_t *dbg, UNUSED char **args) {
+	print_elf_header(dbg_get_symbols(dbg));
+}
+
 void cmd_exit(debugger_t *dbg, UNUSED char **args) {
 	if (dbg_kill_tracee(dbg)) {
 		printf("Exiting....\n");
@@ -97,8 +102,13 @@ void cmd_break(debugger_t *dbg, char **args) {
 		fprintf(stderr, BHRED "✗ " RESET "usage: break <address>\n");
 		return;
 	}
-	uintptr_t addr = strtoul(args[1], NULL, 16);
-	set_breakpoint_at_addr(dbg, addr);
+	char *arg = args[1];
+	if (arg && arg[0] == '0' && arg[1] == 'x') {
+		uintptr_t addr = strtoul(arg, NULL, 16);
+		set_breakpoint_at_addr(dbg, addr, false);
+	} else {
+        set_breakpoint_at_func_symbol(dbg, arg);
+    }
 }
 
 void cmd_delete(debugger_t *dbg, char **args) {
@@ -130,7 +140,7 @@ void cmd_reg(debugger_t *dbg, char **args) {
 	if (is_prefix(args[1], "dump")) {
 		dump_registers(dbg_get_pid(dbg));
 	} else if (is_prefix(args[1], "read")) {
-		printf("0x%016lx\n", get_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg)));
+		printf("%#016lx\n", get_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg)));
 	} else if (is_prefix(args[1], "write")) {
 		uintptr_t value = strtoul(args[3], NULL, 16);
 		set_register_value(get_register_from_name(args[2]), dbg_get_pid(dbg), value);
@@ -142,7 +152,7 @@ void cmd_reg(debugger_t *dbg, char **args) {
 void cmd_mem(debugger_t *dbg, char **args) {
 	uintptr_t address = strtoul(args[2], NULL, 16);
 	if (is_prefix(args[1], "read")) {
-		printf("0x%016lx\n", read_memory(dbg_get_pid(dbg), address));
+		printf("%#016lx\n", read_memory(dbg_get_pid(dbg), address));
 	} else if (is_prefix(args[1], "write")) {
 		uintptr_t value = strtoul(args[3], NULL, 16);
 		write_memory(dbg_get_pid(dbg), address, value);

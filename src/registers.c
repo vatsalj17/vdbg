@@ -117,7 +117,7 @@ void dump_registers(pid_t pid) {
 		else if (strcmp(register_descriptors[i].name, "rflags") == 0)
 			col = BHMAG;
 
-		printf("%s%-12s" RESET "0x%016lx  " HBLK "%lu\n" RESET,
+		printf("%s%-12s" RESET "%#016lx  " HBLK "%lu\n" RESET,
 		       col,
 		       register_descriptors[i].name,
 		       val,
@@ -126,11 +126,11 @@ void dump_registers(pid_t pid) {
 }
 
 uint64_t read_memory(pid_t pid, uintptr_t addr) {
-	DBG_LOG("reading memory at address: 0x%lx", addr);
+	DBG_LOG("reading memory at address: %#lx", addr);
 	return (uint64_t)ptrace(PTRACE_PEEKDATA, pid, addr, NULL);
 }
 
 void write_memory(pid_t pid, uintptr_t addr, uintptr_t value) {
-	DBG_LOG("writing memory at address: 0x%lx", addr);
+	DBG_LOG("writing memory at address: %#lx", addr);
 	ptrace(PTRACE_POKEDATA, pid, addr, value);
 }

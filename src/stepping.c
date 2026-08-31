@@ -81,7 +81,8 @@ void step_in(debugger_t *dbg) {
 	}
 
 	// loop until we are on the same line
-	while ((next_line = get_line_from_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file)) == line) {
+	while ((next_line = get_line_from_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file)) ==
+	       line) {
 		single_step_instruction_with_breakpoint_check(dbg);
 	}
 
@@ -90,16 +91,20 @@ void step_in(debugger_t *dbg) {
 
 // the next instruction
 void step_over(debugger_t *dbg) {
-    uintptr_t load_address = dbg_get_load_address(dbg);
+	uintptr_t load_address = dbg_get_load_address(dbg);
 	uintptr_t pc = get_pc(dbg_get_pid(dbg));
-	Dwarf_Die func;
-	get_func_die_from_pc(dbg_get_symbols(dbg), pc, &func, load_address);
+	Dwarf_Die func_die = {0};
+	get_func_die_from_pc(dbg_get_symbols(dbg), pc, &func_die, load_address);
 
 	Dwarf_Addr func_entry, func_end;
-	const char *func_name = dwarf_diename(&func);
-	DBG_LOG("diename: %s", func_name);
-	dwarf_lowpc(&func, &func_entry);
-	dwarf_highpc(&func, &func_end);
+	const char *func_name = dwarf_diename(&func_die);
+	if (func_name) {
+		DBG_LOG("diename: %s", func_name);
+	} else {
+		CRITICAL("something is wrong with function die\n");
+	}
+	dwarf_lowpc(&func_die, &func_entry);
+	dwarf_highpc(&func_die, &func_end);
 	DBG_LOG("func_entry: %lx, func_end: %lx", func_entry, func_end);
 	func_entry += load_address;
 	func_end += load_address;

@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <sys/personality.h>
 #include <sys/stat.h>
+#include <libelf.h>
 #include <elfutils/libdwfl.h>
 #include <dwarf.h>
 
@@ -179,17 +180,17 @@ static void handle_sigtrap(debugger_t *dbg, siginfo_t siginfo) {
 	case SI_KERNEL:
 	case TRAP_BRKPT: {
 		// putting the pc back where it should be
-		// -1 because execution will go past the breakpoint_t
+		// -1 because execution will go past the breakpoint
 		uintptr_t pc = get_pc(dbg->pid);
 		breakpoint_t *bp = map_lookup(dbg->breakpoints, pc - 1);
 		set_pc(dbg->pid, pc - 1);
 
-		// not printing the message if the breakpoint_t is temperory
+		// not printing the message if the breakpoint
 		if (!bp_is_temp(bp))
-			printf("Hit breakpoint_t at " BRED "0x%lx" RESET "\n",
+			printf("Hit breakpoint at " BRED "%#lx" RESET "\n",
 			       offset_load_address(dbg, get_pc(dbg->pid)));
 		else
-			DBG_LOG("Hit temperory breakpoint_t at 0x%lx",
+			DBG_LOG("Hit temperory breakpoint at %#lx",
 			        offset_load_address(dbg, get_pc(dbg->pid)));
 
 		print_source_at_current_pc(dbg->syms, get_pc(dbg->pid));
@@ -276,7 +277,7 @@ static void resolve_pending_breakpoints(debugger_t *dbg) {
 	uintptr_t addr;
 	while ((addr = list_addr_by_index(dbg->pending_breakpoints, i)) != END_OF_LIST) {
 		addr += dbg->load_address;
-		DBG_LOG("resolving 0x%lx", addr);
+		DBG_LOG("resolving %#lx", addr);
 		breakpoint_t *bp = map_lookup(dbg->breakpoints, addr);
 		if (bp) {
 			bp_set_pid(map_lookup(dbg->breakpoints, addr), dbg->pid);
@@ -286,8 +287,8 @@ static void resolve_pending_breakpoints(debugger_t *dbg) {
 			if (map_insert(dbg->breakpoints, addr, bp)) {
 				bp_enable(bp);
 			} else {
-				DBG_LOG("Breakpoint already set at 0x%lx", addr);
-				DBG_LOG("freeing this breakpoint_t");
+				DBG_LOG("Breakpoint already set at %#lx", addr);
+				DBG_LOG("freeing this breakpoint");
 				bp_free(bp);
 			}
 		}
@@ -336,11 +337,11 @@ void restart(debugger_t *dbg) {
 
 // it takes the address of the instruction as shown in the
 // disassembly of the executable
-void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr) {
+void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr, bool quiet) {
 	// not calling this function during resolution of breakpoints
 
 	add_breakpoint_as_pending(dbg->pending_breakpoints, addr);
-	printf("Set breakpoint_t at addr " YEL "0x%lx" RESET " ...\n", addr);
+	if (!quiet) printf("Set breakpoint at addr " YEL "%#lx" RESET " ...\n", addr);
 
 	// program is not running
 	if (dbg->state == NOT_ACTIVE) {
@@ -351,14 +352,14 @@ void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr) {
 
 	breakpoint_t *bp = bp_init(dbg->pid, addr, false);
 
-	// i think i should enable the breakpoint_t after inserting
+	// i think i should enable the breakpoint after inserting
 	// instead of enabling before inserting
 	// so that it's clear that we aren't doing it twice
 	if (map_insert(dbg->breakpoints, addr, bp)) {
 		bp_enable(bp);
 	} else {
-		DBG_LOG("Breakpoint already set at 0x%lx", addr);
-		DBG_LOG("freeing this breakpoint_t");
+		DBG_LOG("Breakpoint already set at %#lx", addr);
+		DBG_LOG("freeing this breakpoint");
 		bp_free(bp);
 	}
 }
@@ -367,24 +368,33 @@ void unset_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr) {
 	uintptr_t actual_addr = addr + dbg->load_address;
 	breakpoint_t *found_bp = map_lookup(dbg->breakpoints, actual_addr);
 	if (found_bp == NULL) {
-		fprintf(stderr, "No breakpoint_t found at addr: 0x%lx\n", addr);
+		fprintf(stderr, "No breakpoint found at addr: %#lx\n", addr);
 		return;
 	}
-	DBG_LOG("Disabling breakpint at addr 0x%lx", addr);
+	DBG_LOG("Disabling breakpint at addr %#lx", addr);
 	bp_disable(found_bp);
 	delete_breakpoint_from_pending(dbg->pending_breakpoints, addr);
 }
 
+void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
+    size_t list_size = 0;
+    Elf64_Sym *list = get_func_symbols(dbg->syms, symbol_name, &list_size);
+    for (size_t i = 0; i < list_size; i++) {
+        set_breakpoint_at_addr(dbg, list[i].st_value, true);
+    }
+    free(list);
+}
+
 // it takes the actual virtual address of the running program
-// it will return false if a breakpoint_t is already set at the
+// it will return false if a breakpoint is already set at the
 // place i am wanting to set the temp bp
 bool set_temp_breakpoint(debugger_t *dbg, uintptr_t running_addr) {
 	breakpoint_t *bp = bp_init(dbg->pid, running_addr, true);
 	if (map_insert(dbg->breakpoints, running_addr, bp)) {
 		bp_enable(bp);
 	} else {
-		DBG_LOG("Breakpoint already set at 0x%lx", running_addr);
-		DBG_LOG("freeing this breakpoint_t");
+		DBG_LOG("Breakpoint already set at %#lx", running_addr);
+		DBG_LOG("freeing this breakpoint");
 		bp_free(bp);
 		return false;
 	}
@@ -394,10 +404,10 @@ bool set_temp_breakpoint(debugger_t *dbg, uintptr_t running_addr) {
 void unset_temp_breakpoint(debugger_t *dbg, uintptr_t running_addr) {
 	breakpoint_t *found_bp = map_lookup(dbg->breakpoints, running_addr);
 	if (found_bp == NULL) {
-		fprintf(stderr, "wth are you disabling at: 0x%lx", running_addr);
+		fprintf(stderr, "wth are you disabling at: %#lx", running_addr);
 		return;
 	}
-	DBG_LOG("Disabling breakpint at addr 0x%lx", running_addr);
+	DBG_LOG("Disabling breakpint at addr %#lx", running_addr);
 	bp_disable(found_bp);
 	map_delete(dbg->breakpoints, running_addr);
 }
@@ -405,7 +415,7 @@ void unset_temp_breakpoint(debugger_t *dbg, uintptr_t running_addr) {
 void enable_breakpoint(debugger_t *dbg, uintptr_t addr) {
 	breakpoint_t *found_bp = map_lookup(dbg->breakpoints, addr);
 	if (found_bp == NULL) {
-		fprintf(stderr, "No breakpoint_t found at addr: 0x%lx\n", addr);
+		fprintf(stderr, "No breakpoint found at addr: %#lx\n", addr);
 		return;
 	}
 	bp_enable(found_bp);
@@ -414,7 +424,7 @@ void enable_breakpoint(debugger_t *dbg, uintptr_t addr) {
 void disable_breakpoint(debugger_t *dbg, uintptr_t addr) {
 	breakpoint_t *found_bp = map_lookup(dbg->breakpoints, addr);
 	if (found_bp == NULL) {
-		fprintf(stderr, "No breakpoint_t found at addr: 0x%lx\n", addr);
+		fprintf(stderr, "No breakpoint found at addr: %#lx\n", addr);
 		return;
 	}
 	bp_disable(found_bp);
