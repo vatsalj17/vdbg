@@ -6,3 +6,4 @@ seg
 *.txt
 demo
 .gdb*
+*.json

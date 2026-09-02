@@ -79,7 +79,7 @@ void list_clear(struct bp_list *list) {
 }
 
 breakpoint_t *bp_init(pid_t pid, uintptr_t addr, bool is_temp) {
-	DBG_LOG("Intializing breakpoint_t at 0x%lx", addr);
+	DBG_LOG("Intializing breakpoint at 0x%lx", addr);
 	breakpoint_t *new = malloc(sizeof(breakpoint_t));
 	new->pid = pid;
 	new->addr = addr;

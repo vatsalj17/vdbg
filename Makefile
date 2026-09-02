@@ -40,5 +40,8 @@ $(TARGET): $(OBJ)
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(ACTIVE_CFLAGS) -I$(INC_DIR) -c $< -o $@
 
+install: build
+	sudo cp $(TARGET) /usr/local/bin/
+
 clean:
 	rm -rf $(TARGET) $(OBJ_DIR)

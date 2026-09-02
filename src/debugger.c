@@ -88,7 +88,7 @@ bool dbg_is_active(debugger_t *dbg) {
 }
 
 map_t *dbg_get_breakpoints(debugger_t *dbg) {
-    return dbg->breakpoints;
+	return dbg->breakpoints;
 }
 
 dbg_symbols *dbg_get_symbols(debugger_t *dbg) {
@@ -190,8 +190,7 @@ static void handle_sigtrap(debugger_t *dbg, siginfo_t siginfo) {
 			printf("Hit breakpoint at " BRED "%#lx" RESET "\n",
 			       offset_load_address(dbg, get_pc(dbg->pid)));
 		else
-			DBG_LOG("Hit temperory breakpoint at %#lx",
-			        offset_load_address(dbg, get_pc(dbg->pid)));
+			DBG_LOG("Hit temperory breakpoint at %#lx", offset_load_address(dbg, get_pc(dbg->pid)));
 
 		print_source_at_current_pc(dbg->syms, get_pc(dbg->pid));
 
@@ -377,12 +376,15 @@ void unset_breakpoint_at_addr(debugger_t *dbg, uintptr_t addr) {
 }
 
 void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
-    size_t list_size = 0;
-    Elf64_Sym *list = get_func_symbols(dbg->syms, symbol_name, &list_size);
-    for (size_t i = 0; i < list_size; i++) {
-        set_breakpoint_at_addr(dbg, list[i].st_value, true);
-    }
-    free(list);
+	size_t list_size = 0;
+    size_t symtab_idx;
+	Elf64_Sym *list = get_func_symbols(dbg->syms, symbol_name, &list_size, &symtab_idx);
+	for (size_t i = 0; i < list_size; i++) {
+		set_breakpoint_at_addr(dbg, list[i].st_value, true);
+        char *func_name = elf_strptr(get_elf_data(dbg->syms), symtab_idx, list[i].st_name);
+        printf("Set breakpoint at function " YEL "%s" RESET " ...\n", func_name);
+	}
+	free(list);
 }
 
 // it takes the actual virtual address of the running program

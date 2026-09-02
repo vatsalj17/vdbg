@@ -125,12 +125,11 @@ void step_over(debugger_t *dbg) {
 	assert(current_line != 0);
 
 	while (pc < func_end) {
-		pc++; // TODO: now this is a problem (checking every byte is just so bad)
-		      //       i have to figure out the correct way
 		src = dwfl_module_getsrc(mod, pc);
 		dwfl_lineinfo(src, NULL, &line, NULL, NULL, NULL);
 		// printf("line %d, current_line %d, pc: %lx\n", line, current_line, pc);
 		if (line != current_line) {
+            assert(pc != func_end);
 			if (set_temp_breakpoint(dbg, pc)) {
 				to_delete[to_delete_size++] = pc;
 				if (to_delete_size >= to_delete_cap - 1) {
@@ -141,6 +140,8 @@ void step_over(debugger_t *dbg) {
 			// print_source(file, (uint32_t)current_line, 1);
 			current_line = line;
 		}
+		pc++; // TODO: now this is a problem (checking every byte is just so bad)
+		      //       i have to figure out the correct way
 	}
 
 	// ignoring to set breakpoint_t on return address of main so that it doesn't

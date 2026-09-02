@@ -28,6 +28,8 @@ Now you have 3 options:-
 make          # dev build (ASan + UBSan)
 make build    # release build (PIE, relro, now) *recommended*
 make debug    # debug build (symbols + -DDEBUG)
+
+sudo make install # build and install
 ```
 
 ## Usage
@@ -45,12 +47,12 @@ make debug    # debug build (symbols + -DDEBUG)
 | `delete <addr>` | Remove a breakpoint |
 | `enable <addr>` | Re-enable a disabled breakpoint |
 | `disable <addr>` | Disable a breakpoint without removing it |
-| `clear` | Remove all breakpoints |
 | `continue` | Resume execution |
 | `stepi` | Single step through instructions |
 | `step` | Single step through source code |
 | `next` | Step over current instruction |
 | `finish` | Skip the current function |
+| `header` | Print the elf header |
 | `sections <name>` | List all the matching section headers |
 | `symbols <name>` | List all the matching symbols |
 | `register dump` | Dump all x86_64 register states |
@@ -69,7 +71,7 @@ make debug    # debug build (symbols + -DDEBUG)
 * Dynamic loading of shared libraries
 * Disassembly support
 * Some binary static analysis features
-   * [ ] elf header
+   * [x] elf header
    * [x] sections
    * [x] symbols
    * [ ] functions

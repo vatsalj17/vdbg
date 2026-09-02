@@ -14,5 +14,7 @@ const char *str_section_header_type(Elf64_Word type);
 const char *str_symbol_type(unsigned char type);
 const char *str_symbol_bind(unsigned char bind);
 const char *str_symbol_visibility(unsigned char vis);
+const char *str_osabi_name(unsigned char osabi);
+const char *str_elf_filetype(Elf64_Half type);
 
 #endif

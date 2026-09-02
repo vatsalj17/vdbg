@@ -50,8 +50,8 @@ bool is_prefix(const char *input, const char *command) {
 }
 
 static inline void print_line_prefix(unsigned line_no, unsigned target_line) {
-    bool is_target = (line_no == target_line);
-    printf("  %s%3u | %s", is_target ? HGRN : HBLK, line_no, is_target ? RESET : "");
+	bool is_target = (line_no == target_line);
+	printf("  %s%3u | %s", is_target ? HGRN : HBLK, line_no, is_target ? RESET : "");
 }
 
 void print_source(const char *file_name, unsigned line, unsigned lines_context) {
@@ -78,12 +78,12 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
 		if (c == '\n') current_line++;
 	}
 
-    print_line_prefix(current_line, line);
+	print_line_prefix(current_line, line);
 	while (current_line < end_line && (c = fgetc(f)) != EOF) {
 		putc(c, stdout);
 		if (c == '\n') {
 			current_line++;
-            print_line_prefix(current_line, line);
+			print_line_prefix(current_line, line);
 		}
 	}
 	printf(RESET "\r          \n");
@@ -141,10 +141,12 @@ const char *str_section_header_type(Elf64_Word type) {
 	// elfutils hasn't made macro for type GNU_SFRAME so i have to
 	// explicitely define it as it was in binutils
 #define SHT_GNU_SFRAME SHT_GNU_ATTRIBUTES - 1
+
 	switch (type) {
 #define TYPECASE(name)                                                                             \
 	case (SHT_##name):                                                                             \
 		return #name
+
 		TYPECASE(NULL);
 		TYPECASE(PROGBITS);
 		TYPECASE(SYMTAB);
@@ -172,6 +174,8 @@ const char *str_section_header_type(Elf64_Word type) {
 		TYPECASE(GNU_verdef);
 		TYPECASE(GNU_verneed);
 		TYPECASE(GNU_versym);
+
+#undef TYPECASE
 	default: {
 		// DBG_ERR("Unknown type: %u\n", type);
 		return "UNKNOWN TYPE";
@@ -207,4 +211,52 @@ const char *str_symbol_visibility(unsigned char vis) {
 	    "PROTECTED",
 	};
 	return stv_others[vis];
+}
+
+const char *str_osabi_name(unsigned char osabi) {
+	switch (osabi) {
+	case ELFOSABI_SYSV:
+		return "System V";
+	case ELFOSABI_HPUX:
+		return "HP-UX";
+	case ELFOSABI_NETBSD:
+		return "NetBSD";
+	case ELFOSABI_GNU:
+		return "GNU/Linux";
+	case ELFOSABI_SOLARIS:
+		return "Sun Solaris";
+	case ELFOSABI_AIX:
+		return "IBM AIX";
+	case ELFOSABI_IRIX:
+		return "SGI Irix";
+	case ELFOSABI_FREEBSD:
+		return "FreeBSD.";
+	case ELFOSABI_TRU64:
+		return "Compaq TRU64 Unix";
+	case ELFOSABI_MODESTO:
+		return "Novell Modesto";
+	case ELFOSABI_OPENBSD:
+		return "OpenBSD.";
+	case ELFOSABI_ARM_AEABI:
+		return "ARM EABI";
+	case ELFOSABI_ARM:
+		return "ARM";
+	case ELFOSABI_STANDALONE:
+		return "Standalone (Embedded) Application";
+	default:
+		return "";
+	}
+}
+
+const char *str_elf_filetype(Elf64_Half type) {
+	const char *types[ET_NUM];
+	types[ET_NONE] = "NONE (No file type)";
+	types[ET_REL] = "REL (Relocatable file)";
+	types[ET_EXEC] = "EXEC (Executable file)";
+	types[ET_DYN] = "DYN (Shared object file)";
+	types[ET_CORE] = "CORE (Core file)";
+	if (type < ET_NUM)
+		return types[type];
+	else
+		return "Unknown type";
 }

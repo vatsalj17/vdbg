@@ -15,8 +15,7 @@ const command_entry commands[] = {
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
     {"break", cmd_break, false, false, "Set breakpoint"},
     {"continue", cmd_continue, true, false, "Resume execution"},
-    {"clear", cmd_clear, false, false, "Clear all breakpoints"},
-    {"delete", cmd_delete, false, false, "Delete a specific breakpoint"},
+    {"delete", cmd_delete, false, false, "Delete specific breakpoint or all of them if not specified"},
     {"disable", cmd_disable, true, false, "Disable any breakpoint"},
     {"exit", cmd_exit, false, false, "Exit the debugger"},
     {"enable", cmd_enable, true, false, "Enable any breakpoint"},
@@ -41,10 +40,6 @@ void cmd_help(UNUSED debugger_t *dbg, UNUSED char **args) {
 		printf("    %-10s ->  %s\n", commands[i].name, commands[i].help_text);
 	}
 	printf("\n");
-}
-
-void cmd_clear(debugger_t *dbg, UNUSED char **args) {
-	remove_all_breakpoints(dbg);
 }
 
 void cmd_run(debugger_t *dbg, UNUSED char **args) {
@@ -103,15 +98,25 @@ void cmd_break(debugger_t *dbg, char **args) {
 		return;
 	}
 	char *arg = args[1];
+    char *lineno;
 	if (arg && arg[0] == '0' && arg[1] == 'x') {
 		uintptr_t addr = strtoul(arg, NULL, 16);
 		set_breakpoint_at_addr(dbg, addr, false);
-	} else {
+	} else if ((lineno = strchr(arg, ':'))) {
+        CRITICAL("UNIMPLEMENTED");
+        int line = atoi(lineno + 1);
+        lineno[0] = '\0';
+        get_addr_from_lineno(dbg_get_symbols(dbg), arg, line);
+    } else {
         set_breakpoint_at_func_symbol(dbg, arg);
     }
 }
 
 void cmd_delete(debugger_t *dbg, char **args) {
+    if (!args[1]) {
+        remove_all_breakpoints(dbg);
+        return;
+    }
 	uintptr_t addr = strtoul(args[1], NULL, 16);
 	unset_breakpoint_at_addr(dbg, addr);
 }

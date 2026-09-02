@@ -22,7 +22,6 @@ void cmd_break(debugger_t *dbg, char **args);
 void cmd_delete(debugger_t *dbg, char **args);
 void cmd_enable(debugger_t *dbg, char **args);
 void cmd_disable(debugger_t *dbg, char **args);
-void cmd_clear(debugger_t *dbg, char **args);
 void cmd_continue(debugger_t *dbg, char **args);
 void cmd_arguments(debugger_t *dbg, char **args);
 void cmd_reg(debugger_t *dbg, char **args);

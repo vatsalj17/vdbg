@@ -4,6 +4,7 @@
 #include <dwarf.h>
 #include <libelf.h>
 #include <elfutils/libdwfl.h>
+#include <elfutils/libdwelf.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -16,11 +17,15 @@
 
 #define INITIAL_CAP 100
 
+char *debuginfo_path;
+
 // for initializing dwfl
 static const Dwfl_Callbacks callbacks = {
     .find_elf = dwfl_linux_proc_find_elf,
+    // .find_elf = dwfl_build_id_find_elf,
     .find_debuginfo = dwfl_standard_find_debuginfo,
-    .debuginfo_path = NULL,
+    .section_address = dwfl_offline_section_address,
+    .debuginfo_path = &debuginfo_path,
 };
 
 struct dbg_symbols {
@@ -29,7 +34,7 @@ struct dbg_symbols {
 	bool has_dwarf_symbols; // check for printing the src code
 	time_t mtime;           // last modified to time of the executable
 	ssize_t strtab_idx;     // string table index saved so that it can accessed anytime
-	Elf_Scn *symbol_table;
+	Elf_Scn *symbol_table;  // storing the symbol_table in the main struct for fast lookup
 };
 
 // returns true if debug symbols are present in the code
@@ -70,6 +75,8 @@ dbg_symbols *symbols_init(const char *pname) {
 		CRITICAL("dwfl_begin: %s", dwfl_errmsg(dwfl_errno()));
 	}
 
+    // dwfl_report_offline();
+
 	new->has_dwarf_symbols = check_for_debug_symbols(new);
 	new->strtab_idx = -1;
 	new->symbol_table = NULL;
@@ -85,6 +92,10 @@ Dwfl *get_dwarf_data(dbg_symbols *sym) {
 	return sym->dwarf_data;
 }
 
+Elf *get_elf_data(dbg_symbols *sym) {
+	return sym->elf_data;
+}
+
 void print_elf_header(dbg_symbols *sym) {
 	// magic
 	Elf64_Ehdr *ehdr = elf64_getehdr(sym->elf_data);
@@ -93,19 +104,43 @@ void print_elf_header(dbg_symbols *sym) {
 		printf("%02hhx ", ehdr->e_ident[i]);
 	}
 	printf("\n");
-	// TODO: complete it
 
 	unsigned char class = ehdr->e_ident[EI_CLASS];
-	printf("Class: %s\n", (class == ELFCLASS32) ? "ELF32" : "ELF64");
+	printf("%-34s %s\n", "Class:", (class == ELFCLASS32) ? "ELF32" : "ELF64");
 	unsigned char data = ehdr->e_ident[EI_DATA];
-	printf(
-	    "Date: %s%s\n", "2's complement, ", (data == ELFDATA2LSB) ? "Little Endian" : "Big Endian");
+	printf("%-34s %s%s\n",
+	       "Data:",
+	       "2's complement, ",
+	       (data == ELFDATA2LSB) ? "Little Endian" : "Big Endian");
 	unsigned char version = ehdr->e_ident[EI_VERSION];
-	printf("Version: %hhd %s\n", version, (version == EV_CURRENT) ? "(current)" : "");
+	printf(
+	    "%-34s %hhd %s\n", "Ident Version:", version, (version == EV_CURRENT) ? "(current)" : "");
 
-    CRITICAL(BRED "UNIMPLEMENTED" RESET);
-	// unsigned char osabi = ehdr->e_ident[EI_OSABI];
-	// unsigned char abiversion = ehdr->e_ident[EI_ABIVERSION];
+	unsigned char osabi = ehdr->e_ident[EI_OSABI];
+	printf("%-34s %s\n", "OS/ABI:", str_osabi_name(osabi));
+
+	unsigned char abiversion = ehdr->e_ident[EI_ABIVERSION];
+	printf("%-34s %d\n", "ABI Version:", abiversion);
+
+	printf("%-34s %s\n", "Type:", str_elf_filetype(ehdr->e_type));
+	printf("%-34s %s\n", "Machine:", dwelf_elf_e_machine_string(ehdr->e_machine));
+	printf("%-34s %hhd %s\n",
+	       "Version:",
+	       ehdr->e_version,
+	       (ehdr->e_version == EV_CURRENT) ? "(current)" : "");
+
+	printf("%-34s %#lx\n", "Entry point address:", ehdr->e_entry);
+	printf("%-34s %#lx\n", "Start of program headers:", ehdr->e_phoff);
+	printf("%-34s %#lx\n", "Start of section headers:", ehdr->e_shoff);
+
+	// TODO: implement printing of flags
+
+	printf("%-34s %d\n", "Size of this header:", ehdr->e_ehsize);
+	printf("%-34s %d\n", "Size of program header entries:", ehdr->e_phentsize);
+	printf("%-34s %d\n", "Number of program headers entries:", ehdr->e_phnum);
+	printf("%-34s %d\n", "Size of section header entries:", ehdr->e_shentsize);
+	printf("%-34s %d\n", "Number of section headers entries:", ehdr->e_shnum);
+	printf("%-34s %d\n", "Section header string table index:", ehdr->e_shstrndx);
 }
 
 static inline const char *get_section_name(Elf *elf, size_t scn_idx) {
@@ -188,6 +223,8 @@ void print_section_headers(dbg_symbols *sym, char *header_name) {
 	free(section_list);
 }
 
+// this function returns the list of matching symbols as passed in sym_name
+// if NULL is passed then it returns all the symbols
 static Elf64_Sym *get_symbols(dbg_symbols *sym, const char *sym_name, Elf_Scn *scn,
                               size_t strtab_idx, size_t *return_size) {
 	assert(scn);
@@ -278,13 +315,18 @@ void print_symbols_table(dbg_symbols *sym, char *sym_name) {
 				                         : "UNDEF");
 			}
 			if (sym_name) free(symbols_list);
-		}
+		} else if (shdr->sh_type == SHT_DYNSYM) {
+            // TODO: print relocation table too
+        }
 	}
 
 	free(section_list);
 }
 
-Elf64_Sym *get_func_symbols(dbg_symbols *syms, const char *symbol_name, size_t *return_size) {
+// it calls get_symbols and filter out the valid function symbols
+// if also sets the symbol table index if valid variable address is passed as an argument
+Elf64_Sym *get_func_symbols(dbg_symbols *syms, const char *symbol_name, size_t *return_size,
+                            size_t *set_symtab_idx) {
 	assert(symbol_name);
 	if (syms->strtab_idx == -1 || !syms->symbol_table) {
 		size_t temps = 0;
@@ -294,13 +336,16 @@ Elf64_Sym *get_func_symbols(dbg_symbols *syms, const char *symbol_name, size_t *
 	size_t list_size = 0;
 	Elf64_Sym *list =
 	    get_symbols(syms, symbol_name, syms->symbol_table, (size_t)syms->strtab_idx, &list_size);
+
 	size_t idx = 0;
 	for (size_t i = 0; i < list_size; i++) {
 		unsigned char type = ELF64_ST_TYPE(list[i].st_info);
-		if (type == STT_FUNC) {
+		if (type == STT_FUNC && list[i].st_value) {
 			list[idx++] = list[i];
 		}
 	}
+
+	if (set_symtab_idx) *set_symtab_idx = (size_t)syms->strtab_idx;
 	*return_size = idx;
 	return list;
 }
@@ -345,7 +390,49 @@ int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file) {
 	return line_number;
 }
 
-int dw_cb(Dwarf_Die *die, void *arg) {
+uintptr_t get_addr_from_lineno(dbg_symbols *syms, const char *file, int lineno) {
+	// if it's a full path then extract the basename
+	if (strchr(file, '/')) {
+		file = basename(file);
+	}
+
+	Dwarf_Addr bias;
+	Dwarf_Die *cudie = NULL;
+
+    // TODO: it only works on a running program, make it work offline too
+
+	// iterating over all cudies to find the one while our filename
+	while ((cudie = dwfl_nextcu(syms->dwarf_data, cudie, &bias)) != NULL) {
+		const char *name = dwarf_diename(cudie);
+		printf("trying: %s\n", name);
+		if (strcmp(name, file) == 0) {
+			break;
+		}
+	}
+
+	if (!cudie) {
+        printf("dwfl_nextcu failed: %s\n", dwarf_errmsg(-1));
+		printf("try again buddy\n");
+		return 0;
+	}
+
+	Dwfl_Module *module = dwfl_cumodule(cudie);
+	Dwfl_Line **srcsp;
+	size_t src_size;
+
+	if (dwfl_module_getsrc_file(module, file, lineno, 0, &srcsp, &src_size) == -1) {
+		CRITICAL("can't get the addr");
+	}
+	for (size_t i = 0; i < src_size; i++) {
+		const char *name = dwfl_line_comp_dir(srcsp[i]);
+		printf("%zu: %s\n", i, name);
+	}
+
+    free(srcsp);
+	return 0;
+}
+
+static int function_die_callback(Dwarf_Die *die, void *arg) {
 	typedef struct {
 		uintptr_t addr;
 		Dwarf_Die *die;
@@ -390,7 +477,7 @@ void get_func_die_from_pc(dbg_symbols *syms, uintptr_t pc, Dwarf_Die *func_die,
 
 	// what it basically does is that it calls the callback function for
 	// every die of tag DW_TAG_subprogram under the passed cudie
-	dwarf_getfuncs(cudie, dw_cb, (void *)&payload, 0);
+	dwarf_getfuncs(cudie, function_die_callback, (void *)&payload, 0);
 }
 
 void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc) {
