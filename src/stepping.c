@@ -21,14 +21,14 @@ static void single_step_instruction(debugger_t *dbg) {
 }
 
 static void execute_step_over_bp(debugger_t *dbg, breakpoint_t *bp) {
-	// if not null means we have currently hitted the breakpoint_t
+	// if not null means we have currently hitted the breakpoint
 	if (bp == NULL) return;
 	// else
 	// 	printf("found bp\n");
 
 	if (bp_is_enabled(bp)) {
 		bp_disable(bp);
-		// single step forward to jump through the breakpoint_t instruction
+		// single step forward to jump through the breakpoint instruction
 		single_step_instruction(dbg);
 		bp_enable(bp);
 	}
@@ -49,6 +49,8 @@ void single_step_instruction_with_breakpoint_check(debugger_t *dbg) {
 	}
 }
 
+// TODO: stop relying on rbp cause it will fail when frame pointer is omitted from the binary
+
 // the finish instruction
 void step_out(debugger_t *dbg) {
 	// getting the base pointer of the current stackframe from the data stored in rbp
@@ -59,7 +61,7 @@ void step_out(debugger_t *dbg) {
 	DBG_LOG("got return_address: 0x%lx", return_address);
 
 	bool should_remove_breakpoint = false;
-	// adding a temp breakpoint_t
+	// adding a temp breakpoint
 	if (set_temp_breakpoint(dbg, return_address)) {
 		should_remove_breakpoint = true;
 	}
@@ -129,7 +131,7 @@ void step_over(debugger_t *dbg) {
 		dwfl_lineinfo(src, NULL, &line, NULL, NULL, NULL);
 		// printf("line %d, current_line %d, pc: %lx\n", line, current_line, pc);
 		if (line != current_line) {
-            assert(pc != func_end);
+			assert(pc != func_end);
 			if (set_temp_breakpoint(dbg, pc)) {
 				to_delete[to_delete_size++] = pc;
 				if (to_delete_size >= to_delete_cap - 1) {
@@ -144,10 +146,10 @@ void step_over(debugger_t *dbg) {
 		      //       i have to figure out the correct way
 	}
 
-	// ignoring to set breakpoint_t on return address of main so that it doesn't
+	// ignoring to set breakpoint on return address of main so that it doesn't
 	// set bp on libc, and try to print the source
 	if (strcmp(func_name, "main") != 0) {
-		// setting breakpoint_t at return address
+		// setting breakpoint at return address
 		uint64_t frame_pointer = get_register_value(rbp, dbg_get_pid(dbg));
 		uint64_t return_address = read_memory(dbg_get_pid(dbg), frame_pointer + 8);
 		if (set_temp_breakpoint(dbg, return_address)) {

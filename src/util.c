@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -47,6 +48,13 @@ bool is_prefix(const char *input, const char *command) {
 	// printf("is_prefix: command: %s, input: %s\n", command, input);
 	if (strncmp(command, input, strlen(input)) == 0) return true;
 	return false;
+}
+
+bool is_number(const char *str) {
+    for (int i = 0; str[i] != '\0'; i++) {
+        if (!isdigit(str[i])) return false;
+    }
+    return true;
 }
 
 static inline void print_line_prefix(unsigned line_no, unsigned target_line) {

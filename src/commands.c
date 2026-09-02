@@ -11,15 +11,18 @@
 #include "symbols.h"
 #include "stepping.h"
 
+// TODO: add a `list` command to list all the breakpoints but after the breakpoint system is revamped
+
 const command_entry commands[] = {
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
     {"break", cmd_break, false, false, "Set breakpoint"},
     {"continue", cmd_continue, true, false, "Resume execution"},
-    {"delete", cmd_delete, false, false, "Delete specific breakpoint or all of them if not specified"},
+    {"delete", cmd_delete, false, false, "Delete specific breakpoint or all if not specified"},
     {"disable", cmd_disable, true, false, "Disable any breakpoint"},
     {"exit", cmd_exit, false, false, "Exit the debugger"},
     {"enable", cmd_enable, true, false, "Enable any breakpoint"},
     {"finish", cmd_finish, true, true, "Skip the current function"},
+    {"functions", cmd_functions, false, false, "List all the functions"},
     {"help", cmd_help, false, false, "Show this menu"},
     {"header", cmd_header, false, false, "Print ELF header"},
     {"memory", cmd_mem, true, false, "Manipulate memory at address"},
@@ -98,25 +101,26 @@ void cmd_break(debugger_t *dbg, char **args) {
 		return;
 	}
 	char *arg = args[1];
-    char *lineno;
+	char *lineno;
 	if (arg && arg[0] == '0' && arg[1] == 'x') {
 		uintptr_t addr = strtoul(arg, NULL, 16);
 		set_breakpoint_at_addr(dbg, addr, false);
+	} else if (is_number(arg)) {
+		set_breakpoint_at_lineno(dbg, NULL, atoi(arg));
 	} else if ((lineno = strchr(arg, ':'))) {
-        CRITICAL("UNIMPLEMENTED");
-        int line = atoi(lineno + 1);
-        lineno[0] = '\0';
-        get_addr_from_lineno(dbg_get_symbols(dbg), arg, line);
-    } else {
-        set_breakpoint_at_func_symbol(dbg, arg);
-    }
+		int line = atoi(lineno + 1);
+		lineno[0] = '\0';
+		set_breakpoint_at_lineno(dbg, arg, line);
+	} else {
+		set_breakpoint_at_func_symbol(dbg, arg);
+	}
 }
 
 void cmd_delete(debugger_t *dbg, char **args) {
-    if (!args[1]) {
-        remove_all_breakpoints(dbg);
-        return;
-    }
+	if (!args[1]) {
+		remove_all_breakpoints(dbg);
+		return;
+	}
 	uintptr_t addr = strtoul(args[1], NULL, 16);
 	unset_breakpoint_at_addr(dbg, addr);
 }
@@ -141,6 +145,10 @@ void cmd_symbols(debugger_t *dbg, char **args) {
 	print_symbols_table(dbg_get_symbols(dbg), args[1]);
 }
 
+void cmd_functions(debugger_t *dbg, char **args) {
+    list_all_functions(dbg_get_symbols(dbg), args[1]);
+}
+
 void cmd_reg(debugger_t *dbg, char **args) {
 	if (is_prefix(args[1], "dump")) {
 		dump_registers(dbg_get_pid(dbg));
@@ -155,6 +163,9 @@ void cmd_reg(debugger_t *dbg, char **args) {
 }
 
 void cmd_mem(debugger_t *dbg, char **args) {
+	// TODO: add support for custom length memory read and write
+	// and print the memory dump in hexdump style
+
 	uintptr_t address = strtoul(args[2], NULL, 16);
 	if (is_prefix(args[1], "read")) {
 		printf("%#016lx\n", read_memory(dbg_get_pid(dbg), address));
