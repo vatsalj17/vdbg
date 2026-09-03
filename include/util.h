@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <elf.h>
 
+void print_src_file_outdated_warning();
 char *command_generator(const char *text, int state);
 char **split(char *str, char delim);
 bool is_prefix(const char *input, const char *command);

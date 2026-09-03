@@ -43,6 +43,7 @@ sudo make install # build and install
 | `run` | Start the tracee |
 | `restart` | Kill and relaunch the tracee |
 | `arguments <arg...>` | Set arguments to pass to the tracee |
+| `backtrace` | Print the trace of function calls |
 | `break <addr/func/line>` | Set a breakpoint at a hex address, function name, or line number (e.g., `42` or `file.c:42`) |
 | `delete <addr>` | Remove a breakpoint or all breakpoint if not specified |
 | `enable <addr>` | Re-enable a disabled breakpoint |
@@ -66,7 +67,6 @@ sudo make install # build and install
 
 
 ## Working On
-* Stack unwinding
 * Variable inspection
 * Dynamic loading of shared libraries
 * Disassembly support

@@ -22,7 +22,7 @@ Elf64_Sym *get_valid_func_symbols(dbg_symbols *syms, const char *symbol_name, si
                                   size_t *set_symtab_idx);
 
 void setup_dwfl(dbg_symbols *sym, pid_t pid);
-int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file);
+int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file, const char **comp_dir, bool *is_src_old);
 uintptr_t get_addr_from_lineno(dbg_symbols *dbg, const char **file, int lineno);
 Dwarf_Die *get_cudie_from_pc(dbg_symbols *syms, uintptr_t pc);
 void get_func_die_from_pc(dbg_symbols *syms, uintptr_t pc, Dwarf_Die *func_die,

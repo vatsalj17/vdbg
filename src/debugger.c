@@ -379,7 +379,12 @@ void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
 	size_t list_size = 0;
 	size_t symtab_idx;
 	Elf64_Sym *list = get_valid_func_symbols(dbg->syms, symbol_name, &list_size, &symtab_idx);
+	if (list_size == 0) {
+		printf("No function symbol found as \"%s\"\n", symbol_name);
+	}
 	for (size_t i = 0; i < list_size; i++) {
+		// Dwarf_Addr *addrs;
+		// int count = dwarf_entry_breakpoints(list[i], &addrs);
 		set_breakpoint_at_addr(dbg, list[i].st_value, true);
 		char *func_name = elf_strptr(get_elf_data(dbg->syms), symtab_idx, list[i].st_name);
 		printf("Set breakpoint at function " YEL "%s" RESET " ...\n", func_name);
@@ -388,6 +393,8 @@ void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
 }
 
 void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno) {
+	// if the file is not specified and the debugger is active then fetch the file
+	// currently user is wandering around and set the breakpoint in that file
 	if (!filename && dbg->state == ACTIVE) {
 		Dwarf_Die *cudie = get_cudie_from_pc(dbg->syms, get_pc(dbg->pid));
 		const char *name = dwarf_diename(cudie);

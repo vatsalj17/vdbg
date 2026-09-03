@@ -345,7 +345,7 @@ Elf64_Sym *get_valid_func_symbols(dbg_symbols *syms, const char *symbol_name, si
                                   size_t *set_symtab_idx) {
 	assert(symbol_name);
 
-    // if these values are not set the first set them up using get_sections
+	// if these values are not set the first set them up using get_sections
 	if (syms->strtab_idx == -1 || !syms->symbol_table) {
 		size_t temps = 0;
 		Elf_Scn **temp = get_sections(syms, NULL, &temps);
@@ -369,7 +369,7 @@ Elf64_Sym *get_valid_func_symbols(dbg_symbols *syms, const char *symbol_name, si
 }
 
 void list_all_functions(dbg_symbols *syms, const char *symbol_name) {
-    // if these values are not set the first set them up using get_sections
+	// if these values are not set the first set them up using get_sections
 	if (syms->strtab_idx == -1 || !syms->symbol_table) {
 		size_t temps = 0;
 		Elf_Scn **temp = get_sections(syms, NULL, &temps);
@@ -382,13 +382,13 @@ void list_all_functions(dbg_symbols *syms, const char *symbol_name) {
 
 	for (size_t i = 0; i < list_size; i++) {
 		unsigned char type = ELF64_ST_TYPE(list[i].st_info);
-        char *name = elf_strptr(syms->elf_data, (size_t)syms->strtab_idx, list[i].st_name);
+		char *name = elf_strptr(syms->elf_data, (size_t)syms->strtab_idx, list[i].st_name);
 		if (type == STT_FUNC) {
-            printf("0x%08lx %s\n", list[i].st_value, name);
+			printf("0x%08lx %s\n", list[i].st_value, name);
 		}
 	}
 
-    if (symbol_name) free(list);
+	if (symbol_name) free(list);
 }
 
 // setting up dwfl to read modules later on in the code
@@ -406,13 +406,16 @@ void setup_dwfl(dbg_symbols *sym, pid_t pid) {
 	dwfl_report_end(sym->dwfl_data_proc, NULL, NULL);
 }
 
-// returns the line number and the file
-int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file) {
+// returns the line number and the file also set's if the src file is outdated
+int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file, const char **comp_dir,
+                     bool *is_old) {
 	Dwfl_Module *mod = dwfl_addrmodule(sym->dwfl_data_proc, pc);
 	DWFL_SANITY_CHECK(mod, "dwfl_addrmodule");
 
 	Dwfl_Line *src = dwfl_module_getsrc(mod, pc);
 	DWFL_SANITY_CHECK(src, "dwfl_module_getsrc");
+
+	if (comp_dir) *comp_dir = dwfl_line_comp_dir(src);
 
 	int line_number = 0, column = 0;
 	*file = dwfl_lineinfo(src, &pc, &line_number, &column, NULL, NULL);
@@ -425,9 +428,9 @@ int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file) {
 	stat(*file, &statbuf);
 	DBG_LOG("times: %lu, %lu ", sym->mtime, statbuf.st_mtim.tv_sec);
 	if (sym->mtime < statbuf.st_mtim.tv_sec) {
-		printf(RED "\n[" BYEL " Warning: " RESET "source code is modified" RED " \t]\n");
-		printf("[" RESET " pls recompile the code and then debug " RED "]\n" RESET);
+		if (is_old) *is_old = true;
 	}
+
 	return line_number;
 }
 
@@ -501,9 +504,8 @@ Dwarf_Die *get_cudie_from_pc(dbg_symbols *syms, uintptr_t pc) {
 	Dwarf_Die *cudie = dwfl_module_addrdie(mod, pc, &bias);
 	DWFL_SANITY_CHECK(cudie, "dwfl_module_addrdie");
 
-    return cudie;
+	return cudie;
 }
-
 
 static int function_die_callback(Dwarf_Die *die, void *arg) {
 	typedef struct {
@@ -533,6 +535,7 @@ void get_func_die_from_pc(dbg_symbols *syms, uintptr_t pc, Dwarf_Die *func_die,
 	DBG_LOG("cudie name: %s", dwarf_diename(cudie));
 	DBG_LOG("Has children: %s", dwarf_haschildren(cudie) ? "True" : "False");
 
+	// creating a payload to pass to the callback as void pointer
 	struct {
 		uintptr_t addr;
 		Dwarf_Die *die;
@@ -553,8 +556,11 @@ void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc) {
 	// don't try to print the source code
 	if (!syms->has_dwarf_symbols) return;
 
+	bool is_outdated = false;
 	const char *file;
-	int line_no = get_line_from_pc(syms, pc, &file);
+	int line_no = get_line_from_pc(syms, pc, &file, NULL, &is_outdated);
+
+	if (is_outdated) print_src_file_outdated_warning();
 	print_source(file, (uint32_t)line_no, 3);
 }
 

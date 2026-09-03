@@ -11,6 +11,11 @@
 
 #define BUFSIZE 32
 
+void print_src_file_outdated_warning() {
+	printf(RED "\n[" BYEL " Warning: " RESET "source code is modified" RED " \t]\n");
+	printf("[" RESET " pls recompile the code and then debug " RED "]\n" RESET);
+}
+
 char *command_generator(const char *text, int state) {
 	static unsigned long i, len;
 	if (!state) {
@@ -51,10 +56,10 @@ bool is_prefix(const char *input, const char *command) {
 }
 
 bool is_number(const char *str) {
-    for (int i = 0; str[i] != '\0'; i++) {
-        if (!isdigit(str[i])) return false;
-    }
-    return true;
+	for (int i = 0; str[i] != '\0'; i++) {
+		if (!isdigit(str[i])) return false;
+	}
+	return true;
 }
 
 static inline void print_line_prefix(unsigned line_no, unsigned target_line) {

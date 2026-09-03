@@ -16,6 +16,7 @@
 const command_entry commands[] = {
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
     {"break", cmd_break, false, false, "Set breakpoint"},
+    {"backtrace", cmd_backtrace, true, false, "Pring backtrace"},
     {"continue", cmd_continue, true, false, "Resume execution"},
     {"delete", cmd_delete, false, false, "Delete specific breakpoint or all if not specified"},
     {"disable", cmd_disable, true, false, "Disable any breakpoint"},
@@ -76,6 +77,10 @@ void cmd_next(debugger_t *dbg, UNUSED char **args) {
 
 void cmd_header(debugger_t *dbg, UNUSED char **args) {
 	print_elf_header(dbg_get_symbols(dbg));
+}
+
+void cmd_backtrace(debugger_t *dbg, UNUSED char **args) {
+    print_backtrace(dbg);
 }
 
 void cmd_exit(debugger_t *dbg, UNUSED char **args) {

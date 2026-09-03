@@ -77,17 +77,20 @@ void step_out(debugger_t *dbg) {
 void step_in(debugger_t *dbg) {
 	const char *file;
 	int next_line;
-	int line = get_line_from_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file);
+	bool is_outdated = false;
+	int line =
+	    get_line_from_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file, NULL, &is_outdated);
 	if (line == 0) {
 		CRITICAL("Something is wrong");
 	}
 
 	// loop until we are on the same line
-	while ((next_line = get_line_from_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file)) ==
-	       line) {
+	while ((next_line = get_line_from_pc(
+	            dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file, NULL, NULL)) == line) {
 		single_step_instruction_with_breakpoint_check(dbg);
 	}
 
+	if (is_outdated) print_src_file_outdated_warning();
 	if (has_dwarf_symbols(dbg_get_symbols(dbg))) print_source(file, (unsigned)next_line, 3);
 }
 
@@ -165,4 +168,87 @@ void step_over(debugger_t *dbg) {
 		unset_temp_breakpoint(dbg, to_delete[i]);
 	}
 	free(to_delete);
+}
+
+static inline const char *print_frame(debugger_t *dbg, dbg_symbols *syms, uintptr_t pc, pid_t pid,
+                                      uintptr_t load_address, bool is_first) {
+	Dwarf_Die func_die = {0};
+	get_func_die_from_pc(syms, pc, &func_die, load_address);
+
+	// const char *func_name;
+	const char *func_name = dwarf_diename(&func_die);
+	if (!func_name) {
+		printf("something is wrong \n");
+		return NULL;
+	}
+
+	if (is_first) {
+		Dwarf_Addr func_entry;
+		dwarf_lowpc(&func_die, &func_entry);
+
+		uintptr_t temp_bp_addr = pc + 4;
+		bool to_delete_temp_bp = false;
+
+		// if the pc is at function's entry point that means the rbp is
+		// not yet ready for the backtrace so move the pc forward
+		if (func_entry == pc - load_address) {
+			if (set_temp_breakpoint(dbg, pc + 4)) to_delete_temp_bp = true;
+			// BUG: this prints the source code unncessarily
+			continue_execution(dbg);
+			if (to_delete_temp_bp) unset_temp_breakpoint(dbg, temp_bp_addr);
+			uintptr_t new_pc = get_pc(pid);
+			assert(new_pc == pc + 4);
+			pc = new_pc;
+		}
+
+		assert(func_entry != pc - load_address);
+	}
+
+	bool is_outdated = false;
+	const char *filename;
+	const char *compilation_dir;
+	int lineno = get_line_from_pc(syms, pc, &filename, &compilation_dir, &is_outdated);
+
+	// changing the absolute file path to relative one
+	if (compilation_dir) {
+		const char *rel = filename + strlen(compilation_dir);
+		if (*rel == '/') rel++;
+		filename = rel;
+	}
+
+	if (is_first && is_outdated) print_src_file_outdated_warning();
+
+	printf(YEL "frame # " RESET "%#lx: " BWHT "%s" RESET " (" CYN "%s:%d" RESET ")\n",
+	       pc,
+	       func_name,
+	       filename,
+	       lineno);
+
+	return func_name;
+}
+
+void print_backtrace(debugger_t *dbg) {
+	dbg_symbols *syms = dbg_get_symbols(dbg);
+	if (!has_dwarf_symbols(syms)) {
+		printf("this function hasn't been implemented yet bro\n");
+		printf("maybe try again after compiling the binary with dwarf symbols\n");
+		return;
+	}
+
+	pid_t pid = dbg_get_pid(dbg);
+	uintptr_t load_address = dbg_get_load_address(dbg);
+	uintptr_t pc = get_pc(pid);
+
+	const char *func_name = print_frame(dbg, syms, pc, pid, load_address, true);
+	uint64_t frame_pointer = get_register_value(rbp, pid);
+	uint64_t return_address = read_memory(pid, frame_pointer + 8);
+	// printf("ra: %#lx\n", return_address);
+
+	while (strcmp(func_name, "main") != 0) {
+		func_name = print_frame(dbg, syms, return_address, pid, load_address, false);
+
+		frame_pointer = read_memory(pid, frame_pointer);
+		return_address = read_memory(pid, frame_pointer + 8);
+		// printf("ra: %#lx\n", return_address);
+	}
 }
