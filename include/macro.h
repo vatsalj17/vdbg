@@ -1,6 +1,8 @@
 #ifndef MACRO_H
 #define MACRO_H
 
+#include <stdio.h>
+
 // macros to make the codebase look less ugly
 
 #ifdef DEBUG

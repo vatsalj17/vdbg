@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <elfutils/libdwfl.h>
 
+#define DEFAULT_LINE_CONTEXT 3
+
 typedef struct dbg_symbols dbg_symbols;
 
 dbg_symbols *symbols_init(const char *pname);
@@ -27,7 +29,7 @@ uintptr_t get_addr_from_lineno(dbg_symbols *dbg, const char **file, int lineno);
 Dwarf_Die *get_cudie_from_pc(dbg_symbols *syms, uintptr_t pc);
 void get_func_die_from_pc(dbg_symbols *syms, uintptr_t pc, Dwarf_Die *func_die,
                           uintptr_t load_address);
-void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc);
+void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc, unsigned int lines_context);
 uintptr_t initialize_load_address(dbg_symbols *sym, pid_t pid);
 
 #endif

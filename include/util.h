@@ -10,6 +10,7 @@ char **split(char *str, char delim);
 bool is_prefix(const char *input, const char *command);
 bool is_number(const char *str);
 void print_source(const char *file_name, unsigned line, unsigned lines_context);
+void list_current_dir();
 char *str_sigsegv_code(int si_code);
 void str_section_header_flag(Elf64_Xword flag, char flagbuf[20]);
 const char *str_section_header_type(Elf64_Word type);

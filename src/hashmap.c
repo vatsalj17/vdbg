@@ -5,7 +5,7 @@
 
 typedef struct entry {
 	uintptr_t key;
-	breakpoint_t *obj;
+	void *obj;
 	struct entry *next;
 } entry;
 
@@ -40,7 +40,7 @@ map_t *map_init(uint32_t size, cleanupfunction *cf) {
 	return ht;
 }
 
-bool map_insert(map_t *ht, uintptr_t key, breakpoint_t *obj) {
+bool map_insert(map_t *ht, uintptr_t key, void *obj) {
 	if (ht == NULL || obj == NULL) return false;
 	if (map_lookup(ht, key) != NULL) return false;
 	size_t index = map_index(ht, key);

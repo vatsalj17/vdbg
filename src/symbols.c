@@ -212,8 +212,9 @@ void print_section_headers(dbg_symbols *sym, char *header_name) {
 		return;
 	}
 
-	printf("[Nr] Name                 Type           Addr             Offset   Size     Flags Es "
-	       "Link Info Align\n");
+	printf(BWHT
+	       "[Nr] Name                 Type           Addr             Offset   Size     Flags Es "
+	       "Link Info Align" RESET "\n");
 
 	for (size_t i = 0; i < size; i++) {
 		Elf64_Shdr *shdr = elf64_getshdr(section_list[i]);
@@ -275,7 +276,7 @@ static inline void print_symbols_table_header(size_t sym_list_size, char *sym_na
 		} else {
 			printf("\nFound %zu symbols matching \"%s\".\n\n", sym_list_size, sym_name);
 		}
-		printf("%s  %-40s %-7s %-6s %-18s %-4s %-9s %-10s\n",
+		printf(BWHT "%s  %-40s %-7s %-6s %-18s %-4s %-9s %-10s" RESET "\n",
 		       "NUM",
 		       "NAME",
 		       "TYPE",
@@ -551,7 +552,7 @@ void get_func_die_from_pc(dbg_symbols *syms, uintptr_t pc, Dwarf_Die *func_die,
 	dwarf_getfuncs(cudie, function_die_callback, (void *)&payload, 0);
 }
 
-void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc) {
+void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc, unsigned int lines_context) {
 	// it it does not have dwarf symbols than just return
 	// don't try to print the source code
 	if (!syms->has_dwarf_symbols) return;
@@ -561,7 +562,7 @@ void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc) {
 	int line_no = get_line_from_pc(syms, pc, &file, NULL, &is_outdated);
 
 	if (is_outdated) print_src_file_outdated_warning();
-	print_source(file, (uint32_t)line_no, 3);
+	print_source(file, (uint32_t)line_no, lines_context);
 }
 
 // to get the base address of dyn executable

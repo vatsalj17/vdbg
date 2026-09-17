@@ -20,30 +20,30 @@ static void single_step_instruction(debugger_t *dbg) {
 	wait_for_signal(dbg);
 }
 
-static void execute_step_over_bp(debugger_t *dbg, breakpoint_t *bp) {
+static void execute_step_over_loc(debugger_t *dbg, bp_location_t *loc) {
 	// if not null means we have currently hitted the breakpoint
-	if (bp == NULL) return;
+	if (loc == NULL) return;
 	// else
-	// 	printf("found bp\n");
+	// 	printf("found loc\n");
 
-	if (bp_is_enabled(bp)) {
-		bp_disable(bp);
+	if (loc_is_patched(loc)) {
+		loc_disable(loc);
 		// single step forward to jump through the breakpoint instruction
 		single_step_instruction(dbg);
-		bp_enable(bp);
+		loc_enable(loc);
 	}
 }
 
 void step_over_breakpoint(debugger_t *dbg) {
-	breakpoint_t *bp = map_lookup(dbg_get_breakpoints(dbg), get_pc(dbg_get_pid(dbg)));
-	execute_step_over_bp(dbg, bp);
+	bp_location_t *loc = map_lookup(dbg_get_locations(dbg), get_pc(dbg_get_pid(dbg)));
+	execute_step_over_loc(dbg, loc);
 }
 
 void single_step_instruction_with_breakpoint_check(debugger_t *dbg) {
-	breakpoint_t *bp = map_lookup(dbg_get_breakpoints(dbg), get_pc(dbg_get_pid(dbg)));
-	if (bp != NULL) {
+	bp_location_t *loc = map_lookup(dbg_get_locations(dbg), get_pc(dbg_get_pid(dbg)));
+	if (loc != NULL) {
 		DBG_LOG("bp found here now stepping over it");
-		execute_step_over_bp(dbg, bp);
+		execute_step_over_loc(dbg, loc);
 	} else {
 		single_step_instruction(dbg);
 	}
@@ -62,7 +62,7 @@ void step_out(debugger_t *dbg) {
 
 	bool should_remove_breakpoint = false;
 	// adding a temp breakpoint
-	if (set_temp_breakpoint(dbg, return_address)) {
+	if (set_temp_bp_location(dbg, return_address)) {
 		should_remove_breakpoint = true;
 	}
 
@@ -70,7 +70,7 @@ void step_out(debugger_t *dbg) {
 
 	// if added that temp bp then remove it
 	if (should_remove_breakpoint) {
-		unset_temp_breakpoint(dbg, return_address);
+		unset_temp_bp_location(dbg, return_address);
 	}
 }
 
@@ -91,7 +91,8 @@ void step_in(debugger_t *dbg) {
 	}
 
 	if (is_outdated) print_src_file_outdated_warning();
-	if (has_dwarf_symbols(dbg_get_symbols(dbg))) print_source(file, (unsigned)next_line, 3);
+	if (has_dwarf_symbols(dbg_get_symbols(dbg)))
+		print_source(file, (unsigned)next_line, DEFAULT_LINE_CONTEXT);
 }
 
 // the next instruction
@@ -135,7 +136,7 @@ void step_over(debugger_t *dbg) {
 		// printf("line %d, current_line %d, pc: %lx\n", line, current_line, pc);
 		if (line != current_line) {
 			assert(pc != func_end);
-			if (set_temp_breakpoint(dbg, pc)) {
+			if (set_temp_bp_location(dbg, pc)) {
 				to_delete[to_delete_size++] = pc;
 				if (to_delete_size >= to_delete_cap - 1) {
 					to_delete_cap *= 2;
@@ -155,7 +156,7 @@ void step_over(debugger_t *dbg) {
 		// setting breakpoint at return address
 		uint64_t frame_pointer = get_register_value(rbp, dbg_get_pid(dbg));
 		uint64_t return_address = read_memory(dbg_get_pid(dbg), frame_pointer + 8);
-		if (set_temp_breakpoint(dbg, return_address)) {
+		if (set_temp_bp_location(dbg, return_address)) {
 			to_delete[to_delete_size++] = return_address;
 		}
 	}
@@ -165,7 +166,7 @@ void step_over(debugger_t *dbg) {
 
 	DBG_LOG("cleaning up all the temp breakpoints");
 	for (size_t i = 0; i < to_delete_size; i++) {
-		unset_temp_breakpoint(dbg, to_delete[i]);
+		unset_temp_bp_location(dbg, to_delete[i]);
 	}
 	free(to_delete);
 }
@@ -192,10 +193,10 @@ static inline const char *print_frame(debugger_t *dbg, dbg_symbols *syms, uintpt
 		// if the pc is at function's entry point that means the rbp is
 		// not yet ready for the backtrace so move the pc forward
 		if (func_entry == pc - load_address) {
-			if (set_temp_breakpoint(dbg, pc + 4)) to_delete_temp_bp = true;
+			if (set_temp_bp_location(dbg, pc + 4)) to_delete_temp_bp = true;
 			// BUG: this prints the source code unncessarily
 			continue_execution(dbg);
-			if (to_delete_temp_bp) unset_temp_breakpoint(dbg, temp_bp_addr);
+			if (to_delete_temp_bp) unset_temp_bp_location(dbg, temp_bp_addr);
 			uintptr_t new_pc = get_pc(pid);
 			assert(new_pc == pc + 4);
 			pc = new_pc;

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <asm-generic/siginfo.h>
+#include <dirent.h>
 
 #include "util.h"
 #include "macro.h"
@@ -101,6 +102,24 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
 	}
 	printf(RESET "\r          \n");
 	fclose(f);
+}
+
+void list_current_dir(void) {
+	struct dirent **entries;
+
+	int count = scandir(".", &entries, NULL, alphasort);
+	if (count == -1) {
+		perror("scandir");
+		return;
+	}
+
+    // TODO: give better output
+	for (int i = 0; i < count; i++) {
+		printf("%s\n", entries[i]->d_name);
+		free(entries[i]);
+	}
+
+	free(entries);
 }
 
 char *str_sigsegv_code(int si_code) {

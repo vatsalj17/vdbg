@@ -4,7 +4,7 @@ A custom, lightweight Linux debugger built from scratch in C using `ptrace`.
 I built this project to learn how debuggers actually work under the hood in Linux. It's a from-scratch implementation using `ptrace` and `libelf`/`libdw`, mostly for my own learning and exploration.
 
 ## Features
-* **Execution:** You can spawn, attach, restart, and kill target programs. It supports single stepping (`stepi`, `step`, `next`) and skipping functions (`finish`).
+* **Execution:** You can spawn, restart, and exit target programs. It supports single stepping (`stepi`, `step`, `next`) and skipping functions (`finish`).
 * **Breakpoints:** Injects `0xcc` (int 3) manually and restores original bytes. You can set breakpoints by hex address, function name, or even source line number (e.g., `break 42` or `break main.c:42`). It handles pending breakpoints too!
 * **Registers & Memory:** Read/write CPU registers and raw memory addresses.
 * **PIE / ASLR Support:** Automatically calculates the base load address by reading `/proc/<pid>/maps` and handles offsets.
@@ -45,14 +45,16 @@ sudo make install # build and install
 | `arguments <arg...>` | Set arguments to pass to the tracee |
 | `backtrace` | Print the trace of function calls |
 | `break <addr/func/line>` | Set a breakpoint at a hex address, function name, or line number (e.g., `42` or `file.c:42`) |
-| `delete <addr>` | Remove a breakpoint or all breakpoint if not specified |
-| `enable <addr>` | Re-enable a disabled breakpoint |
-| `disable <addr>` | Disable a breakpoint without removing it |
+| `delete <id/addr/func/line>` | Remove a breakpoint or all breakpoints if not specified |
+| `enable <id/addr/func/line>` | Enable a disabled breakpoint or all breakpoints if not specified |
+| `disable <id/addr/func/line>` | Disable a breakpoint or all breakpoints if not specified |
+| `info` | List all the breakpoints |
 | `continue` | Resume execution |
 | `stepi` | Single step through instructions |
 | `step` | Single step through source code |
 | `next` | Step over current instruction |
 | `finish` | Skip the current function |
+| `source <lines>` | Print the source code at the current instruction |
 | `header` | Print the elf header |
 | `sections <name>` | List all the matching section headers |
 | `symbols <name>` | List all the matching symbols |
