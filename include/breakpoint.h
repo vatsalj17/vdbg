@@ -21,7 +21,7 @@ typedef enum {
 } bp_kind;
 
 typedef struct {
-	const char *file;
+	char *file;
 	int lineno;
 } file_line_pair;
 

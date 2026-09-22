@@ -1,0 +1,12 @@
+break main
+break func_a
+break func_b
+list
+run
+list
+continue
+continue
+delete func_b
+list
+continue
+exit

@@ -16,6 +16,7 @@ typedef struct {
 extern const command_entry commands[];
 
 void handle_command(debugger_t *dbg, char *input);
+
 void cmd_run(debugger_t *dbg, char **args);
 void cmd_restart(debugger_t *dbg, char **args);
 void cmd_break(debugger_t *dbg, char **args);
@@ -37,8 +38,10 @@ void cmd_symbols(debugger_t *dbg, char **args);
 void cmd_header(debugger_t *dbg, char **args);
 void cmd_functions(debugger_t *dbg, char **args);
 void cmd_backtrace(debugger_t *dbg, char **args);
-void cmd_info(debugger_t *dbg, char **args);
+void cmd_list(debugger_t *dbg, char **args);
 void cmd_source(debugger_t *dbg, char **args);
 void cmd_ls(debugger_t *dbg, char **args);
+void cmd_clear(debugger_t *dbg, char **args);
+void cmd_vmmap(debugger_t *dbg, char **args);
 
 #endif

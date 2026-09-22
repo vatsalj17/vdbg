@@ -17,6 +17,7 @@ const command_entry commands[] = {
     {"break", cmd_break, false, false, "Set breakpoint"},
     {"backtrace", cmd_backtrace, true, false, "Pring backtrace"},
     {"continue", cmd_continue, true, false, "Resume execution"},
+    {"clear", cmd_clear, false, false, "Clears the screen"},
     {"delete", cmd_delete, false, false, "Delete specific breakpoint or all if not specified"},
     {"disable", cmd_disable, false, false, "Disable any breakpoint"},
     {"exit", cmd_exit, false, false, "Exit the debugger"},
@@ -25,7 +26,7 @@ const command_entry commands[] = {
     {"functions", cmd_functions, false, false, "List all the functions"},
     {"help", cmd_help, false, false, "Show this menu"},
     {"header", cmd_header, false, false, "Print ELF header"},
-    {"info", cmd_info, false, false, "List all the breakpoints"},
+    {"list", cmd_list, false, false, "List all the breakpoints"},
     {"ls", cmd_ls, false, false, "List current directory"},
     {"memory", cmd_mem, true, false, "Manipulate memory at address"},
     {"next", cmd_next, true, true, "Step over current instruction"},
@@ -37,7 +38,8 @@ const command_entry commands[] = {
     {"source", cmd_source, true, true, "Print the source code at the current instruction"},
     {"sections", cmd_sections, false, false, "List all the matching section headers"},
     {"symbols", cmd_symbols, false, false, "List all the matching symbols"},
-    {NULL, NULL, false, false, NULL},
+    {"vmmap", cmd_vmmap, true, false, "Print the virtual memory layout of program"},
+    {NULL, NULL, NULL, NULL, NULL},
 };
 
 void cmd_help(UNUSED debugger_t *dbg, UNUSED char **args) {
@@ -48,8 +50,14 @@ void cmd_help(UNUSED debugger_t *dbg, UNUSED char **args) {
 	printf("\n");
 }
 
+// adding ls and clear because they are in muscle memory now and
+// i don't want to see error if type it by mistake
 void cmd_ls(UNUSED debugger_t *dbg, UNUSED char **args) {
-    list_current_dir();
+	list_current_dir();
+}
+
+void cmd_clear(UNUSED debugger_t *dbg, UNUSED char **args) {
+	printf("\e[2J\e[H");
 }
 
 void cmd_run(debugger_t *dbg, UNUSED char **args) {
@@ -90,8 +98,8 @@ void cmd_backtrace(debugger_t *dbg, UNUSED char **args) {
 	print_backtrace(dbg);
 }
 
-void cmd_info(debugger_t *dbg, UNUSED char **args) {
-    print_breakpoint_list(dbg_get_pending_list(dbg));
+void cmd_list(debugger_t *dbg, UNUSED char **args) {
+	print_breakpoint_list(dbg_get_pending_list(dbg));
 }
 
 void cmd_exit(debugger_t *dbg, UNUSED char **args) {
@@ -104,39 +112,44 @@ void cmd_exit(debugger_t *dbg, UNUSED char **args) {
 	}
 }
 
+void cmd_vmmap(debugger_t *dbg, UNUSED char **args) {
+	print_memory_map(dbg_get_pid(dbg));
+}
+
 void cmd_arguments(debugger_t *dbg, char **args) {
-	// ignoring the command and passing the arguments
-	add_arguments_for_tracee(dbg, args + 1);
+	add_arguments_for_tracee(dbg, args);
 }
 
 void cmd_break(debugger_t *dbg, char **args) {
 	if (!args[1]) {
-		fprintf(stderr, BHRED "✗ " RESET "usage: break <address>\n");
+		fprintf(stderr, BHRED "✗ " RESET "usage: break <address/symbol/file:lineno>\n");
 		return;
 	}
-	char *arg = args[1];
-	char *lineno;
-	if (arg && arg[0] == '0' && arg[1] == 'x') {
-		uintptr_t addr = strtoul(arg, NULL, 16);
-		set_breakpoint_at_addr(dbg, addr, false);
-	} else if (is_number(arg)) {
-		if (!has_dwarf_symbols(dbg_get_symbols(dbg))) {
-			printf("can't set breakpoint at line number\n");
-			printf("the executable doesn't contain dwarf symbols");
-			return;
+
+	for (char **arg = args + 1; *arg; arg++) {
+		char *lineno;
+		if (*arg && (*arg)[0] == '0' && (*arg)[1] == 'x') {
+			uintptr_t addr = strtoul(*arg, NULL, 16);
+			set_breakpoint_at_addr(dbg, addr, false);
+		} else if (is_number(*arg)) {
+			if (!has_dwarf_symbols(dbg_get_symbols(dbg))) {
+				printf("can't set breakpoint at line number\n");
+				printf("the executable doesn't contain dwarf symbols\n");
+				return;
+			}
+			set_breakpoint_at_lineno(dbg, NULL, atoi(*arg));
+		} else if ((lineno = strchr(*arg, ':'))) {
+			if (!has_dwarf_symbols(dbg_get_symbols(dbg))) {
+				printf("can't set breakpoint at line number\n");
+				printf("the executable doesn't contain dwarf symbols\n");
+				return;
+			}
+			int line = atoi(lineno + 1);
+			lineno[0] = '\0';
+			set_breakpoint_at_lineno(dbg, *arg, line);
+		} else {
+			set_breakpoint_at_func_symbol(dbg, *arg);
 		}
-		set_breakpoint_at_lineno(dbg, NULL, atoi(arg));
-	} else if ((lineno = strchr(arg, ':'))) {
-		if (!has_dwarf_symbols(dbg_get_symbols(dbg))) {
-			printf("can't set breakpoint at line number\n");
-			printf("the executable doesn't contain dwarf symbols");
-			return;
-		}
-		int line = atoi(lineno + 1);
-		lineno[0] = '\0';
-		set_breakpoint_at_lineno(dbg, arg, line);
-	} else {
-		set_breakpoint_at_func_symbol(dbg, arg);
 	}
 }
 
@@ -152,7 +165,10 @@ static breakpoint_t *parse_arg_bp(debugger_t *dbg, char *arg) {
 	} else if (arg && arg[0] == '0' && arg[1] == 'x') {
 		// at addr
 		uintptr_t addr = strtoul(arg, NULL, 16);
-		if (addr == ULONG_MAX) DBG_ERR("Invalid argument. give proper 0x<addr>");
+		if (addr == ULONG_MAX || addr == 0) {
+			printf("Invalid argument \"%s\". give proper 0x<addr>\n", arg);
+			return NULL;
+		}
 		breakpoint_t *bp =
 		    find_breakpoint_from_pending(dbg_get_pending_list(dbg), BP_ADDR, (void *)addr);
 		if (!bp) printf("no such bp found with addr %#lx\n", addr);
@@ -167,7 +183,10 @@ static breakpoint_t *parse_arg_bp(debugger_t *dbg, char *arg) {
 		int line = atoi(lineno + 1);
 		lineno[0] = '\0';
 		char *file = arg;
-		if (line == 0 || !file) DBG_ERR("Invalid argument. give proper file:lineno");
+		if (line == 0 || !file) {
+			printf("Invalid argument \"%s\". give proper file:lineno\n", arg);
+			return NULL;
+		}
 		file_line_pair pair = {
 		    .file = file,
 		    .lineno = line,
@@ -192,9 +211,12 @@ void cmd_delete(debugger_t *dbg, char **args) {
 		remove_all_breakpoints(dbg);
 		return;
 	}
-	breakpoint_t *bp = parse_arg_bp(dbg, args[1]);
-	if (!bp) return;
-	remove_breakpoint(dbg, bp);
+	for (char **arg = args + 1; *arg; arg++) {
+		breakpoint_t *bp = parse_arg_bp(dbg, *arg);
+		if (!bp) continue;
+		remove_breakpoint(dbg, bp);
+		printf("removed bp: %s\n", *arg);
+	}
 }
 
 void cmd_enable(debugger_t *dbg, char **args) {
@@ -203,9 +225,12 @@ void cmd_enable(debugger_t *dbg, char **args) {
 		enable_all_breakpoints(dbg);
 		return;
 	}
-	breakpoint_t *bp = parse_arg_bp(dbg, args[1]);
-	if (!bp) return;
-	bp_enable(bp);
+	for (char **arg = args + 1; *arg; arg++) {
+		breakpoint_t *bp = parse_arg_bp(dbg, *arg);
+		if (!bp) continue;
+		bp_enable(bp);
+		printf("enabled bp: %s\n", *arg);
+	}
 }
 
 void cmd_disable(debugger_t *dbg, char **args) {
@@ -214,9 +239,12 @@ void cmd_disable(debugger_t *dbg, char **args) {
 		disable_all_breakpoints(dbg);
 		return;
 	}
-	breakpoint_t *bp = parse_arg_bp(dbg, args[1]);
-	if (!bp) return;
-	bp_disable(bp);
+	for (char **arg = args + 1; *arg; arg++) {
+		breakpoint_t *bp = parse_arg_bp(dbg, *arg);
+		if (!bp) continue;
+		bp_disable(bp);
+		printf("disabled bp: %s\n", *arg);
+	}
 }
 
 void cmd_source(debugger_t *dbg, char **args) {
@@ -267,7 +295,10 @@ void cmd_mem(debugger_t *dbg, char **args) {
 }
 
 void handle_command(debugger_t *dbg, char *input) {
-	char **args = split(input, ' ');
+	char *temp = NULL;
+	char **args = split(input, ' ', &temp);
+    if (args == NULL) return;
+
 	char *command = args[0];
 	if (command == NULL) {
 		free(args);
@@ -316,5 +347,6 @@ void handle_command(debugger_t *dbg, char *input) {
 	fprintf(stderr, BHRED "✗ " BCYN "%s:" RESET " invalid command. Use help.\n", command);
 
 cleanup:
+	free(temp); // freeing the string that we duped in split()
 	free(args);
 }

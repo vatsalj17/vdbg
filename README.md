@@ -1,72 +1,68 @@
 # vdbg
-A custom, lightweight Linux debugger built from scratch in C using `ptrace`.
-
-I built this project to learn how debuggers actually work under the hood in Linux. It's a from-scratch implementation using `ptrace` and `libelf`/`libdw`, mostly for my own learning and exploration.
+A Linux debugger built from scratch in C using `ptrace`. Made this to understand how debuggers actually work. It works well enough.
 
 ## Features
-* **Execution:** You can spawn, restart, and exit target programs. It supports single stepping (`stepi`, `step`, `next`) and skipping functions (`finish`).
-* **Breakpoints:** Injects `0xcc` (int 3) manually and restores original bytes. You can set breakpoints by hex address, function name, or even source line number (e.g., `break 42` or `break main.c:42`). It handles pending breakpoints too!
-* **Registers & Memory:** Read/write CPU registers and raw memory addresses.
-* **PIE / ASLR Support:** Automatically calculates the base load address by reading `/proc/<pid>/maps` and handles offsets.
-* **DWARF & ELF:** Uses `libelf` and `libdw` for offline and live symbol parsing. Recently added support for offline dwarf parsing so we can resolve line numbers even before the program starts running.
-* **CLI:** Tab completion (via `readline`), empty-input repetition, and short commands (like typing `c` for continue).
+- **Breakpoints**: by address (`0xDEADC0DE`), function name, or line number (`42` / `file.c:42`). Pending breakpoints work too (set before running). Enable/disable/delete individually or all at once.
+- **Stepping**: `stepi` (instruction), `step` (source line), `next` (step over), `finish` (step out)
+- **Backtrace**: walks the call stack using `rbp`. breaks if you compiled with `-fomit-frame-pointer`, that's on you
+- **Registers & Memory**: read/write CPU registers and raw memory
+- **ELF/DWARF inspection**: elf header, section headers, symbol table, functions list
+- **PIE/ASLR**: reads `/proc/<pid>/maps` and handles offsets automatically
+- **CLI**: tab completion, command history, prefix matching (`c` works for `continue`), empty enter repeats last command
+- **Scripting**: `--script <file>` or `-ex <cmd>` to automate stuff on startup
 
 ## Under the Hood
-* `debugger.c`: This is the main engine. It's basically a state machine that catches signals (`SIGTRAP`, `SIGSEGV`) and uses temporary breakpoints to figure out stepping.
-* `symbols.c`: Handles all the ELF and DWARF parsing stuff. It separates live process parsing from offline parsing to make address resolution cleaner.
-* `hashmap.c`: A custom hash table to keep track of active breakpoints.
+- `debugger.c`: main engine. tracee lifecycle, signal handling (`SIGTRAP`, `SIGSEGV`, `SIGABRT`), spawning, breakpoint resolution on startup
+- `breakpoint.c`: two-layer design: `breakpoint_t` (the logical bp you set) and `bp_location_t` (the actual patched memory location). multiple breakpoints can share a location. handles the `0xcc` patching/restoring
+- `stepping.c`: all the stepping logic. `next` sets temp breakpoints on every line in the current function then continues. `finish` sets a temp bp at the return address
+- `symbols.c`: ELF and DWARF parsing. offline (before run) and live (via `libdwfl`) separated so address resolution works both ways
+- `hashmap.c` + `list.c`: custom hashmap for breakpoint lookup by address/id, intrusive linked list for pending breakpoints
 
 ## Build
-Requires `gcc`, `make`, `libreadline`, and `elfutils`.
+Needs `gcc`, `make`, `libreadline`, `elfutils`.
 ```bash
 git clone https://github.com/vatsalj17/vdbg.git
 cd vdbg
-```
-
-Now you have 3 options:- 
-```bash
-make          # dev build (ASan + UBSan)
-make build    # release build (PIE, relro, now) *recommended*
-make debug    # debug build (symbols + -DDEBUG)
-
-sudo make install # build and install
+make         # dev build (ASan + UBSan)
+make build   # release build *recommended*
+make debug   # debug build (-g3 -DDEBUG)
+make install # build + install to /usr/local/bin
 ```
 
 ## Usage
 ```bash
-./vdbg <executable>
+vdbg [options] <executable>
+vdbg ./a.out
+vdbg -ex "break main" -ex "run" ./a.out
+vdbg --script commands.vdbg ./a.out
 ```
-
 
 | Command | Description |
 |---|---|
 | `run` | Start the tracee |
-| `restart` | Kill and relaunch the tracee |
-| `arguments <arg...>` | Set arguments to pass to the tracee |
-| `backtrace` | Print the trace of function calls |
-| `break <addr/func/line>` | Set a breakpoint at a hex address, function name, or line number (e.g., `42` or `file.c:42`) |
-| `delete <id/addr/func/line>` | Remove a breakpoint or all breakpoints if not specified |
-| `enable <id/addr/func/line>` | Enable a disabled breakpoint or all breakpoints if not specified |
-| `disable <id/addr/func/line>` | Disable a breakpoint or all breakpoints if not specified |
-| `info` | List all the breakpoints |
+| `restart` | Kill and relaunch |
+| `arguments <arg..>` | Set tracee arguments |
+| `break <addr/func/line>` | Set breakpoint |
+| `delete [id/addr/func/line]` | Delete breakpoint(s) |
+| `enable [id/addr/func/line]` | Enable breakpoint(s) |
+| `disable [id/addr/func/line]` | Disable breakpoint(s) |
+| `list` | List all breakpoints |
 | `continue` | Resume execution |
-| `stepi` | Single step through instructions |
-| `step` | Single step through source code |
-| `next` | Step over current instruction |
-| `finish` | Skip the current function |
-| `source <lines>` | Print the source code at the current instruction |
-| `header` | Print the elf header |
-| `sections <name>` | List all the matching section headers |
-| `symbols <name>` | List all the matching symbols |
-| `functions <name>` | List all the matching functions |
-| `register dump` | Dump all x86_64 register values |
-| `register read <reg>` | Read a register value |
-| `register write <reg> <val>` | Write a register value |
-| `memory read <addr>` | Read 8 bytes at address |
-| `memory write <addr> <val>` | Write a value to address |
-| `help` | Show command menu |
-| `exit` | Exit the debugger |
-
+| `stepi` | Step one instruction |
+| `step` | Step one source line |
+| `next` | Step over |
+| `finish` | Step out of current function |
+| `backtrace` | Print call stack |
+| `source [lines]` | Show source at current PC |
+| `register dump/read/write` | Manage registers |
+| `memory read/write <addr>` | Read/write memory |
+| `header` | Print ELF header |
+| `sections [name]` | List section headers |
+| `symbols [name]` | List symbols |
+| `functions [name]` | List functions |
+| `vmmap` | Print virtual memory layout |
+| `help` | Show command list |
+| `exit` | Exit |
 
 ## Working On
 * Variable inspection

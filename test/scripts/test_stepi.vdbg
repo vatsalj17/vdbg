@@ -1,0 +1,9 @@
+break func_c
+run
+stepi
+stepi
+stepi
+stepi
+stepi
+cont
+exit

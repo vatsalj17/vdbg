@@ -1,0 +1,7 @@
+break func_b
+run
+step
+step
+finish
+next
+exit

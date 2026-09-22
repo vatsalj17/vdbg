@@ -44,7 +44,7 @@ struct dbg_symbols {
 };
 
 // returns true if debug symbols are present in the code
-static bool check_for_debug_symbols(dbg_symbols *sym) {
+static inline bool check_for_debug_symbols(dbg_symbols *sym) {
 	Elf64_Ehdr *ehdr = elf64_getehdr(sym->elf_data);
 	for (size_t i = 1;; i++) {
 		Elf_Scn *scnhdr = elf_getscn(sym->elf_data, i);
@@ -58,15 +58,31 @@ static bool check_for_debug_symbols(dbg_symbols *sym) {
 	return false;
 }
 
+static inline bool verif_elf_signature(int fd) {
+	char bytes[4];
+	read(fd, bytes, 4);
+	char ELF[] = {0x7F, 0x45, 0x4C, 0x46};
+
+	if (memcmp(bytes, ELF, 4) == 0)
+		return true;
+	else
+		return false;
+}
+
 dbg_symbols *symbols_init(const char *pname) {
 	dbg_symbols *new = malloc(sizeof(dbg_symbols));
-	struct stat file_stats;
-	stat(pname, &file_stats);
-	new->mtime = file_stats.st_mtim.tv_sec;
-
 	int fd = open(pname, O_RDONLY);
 	if (fd == -1) {
-		CRITICAL_PERROR("open");
+		perror("open");
+		free(new);
+		return NULL;
+	}
+
+	if (verif_elf_signature(fd) == false) {
+		printf("Not an elf executable\n");
+		close(fd);
+		free(new);
+		return NULL;
 	}
 
 	elf_version(EV_CURRENT); // necessary because libelf just won't work
@@ -96,6 +112,14 @@ dbg_symbols *symbols_init(const char *pname) {
 	new->has_dwarf_symbols = check_for_debug_symbols(new);
 	new->strtab_idx = -1;
 	new->symbol_table = NULL;
+
+	struct stat file_stats;
+	if (stat(pname, &file_stats) == -1) {
+		DBG_PERROR("stat");
+		free(new);
+		return NULL;
+	}
+	new->mtime = file_stats.st_mtim.tv_sec;
 
 	return new;
 }
@@ -359,7 +383,8 @@ Elf64_Sym *get_valid_func_symbols(dbg_symbols *syms, const char *symbol_name, si
 	size_t idx = 0;
 	for (size_t i = 0; i < list_size; i++) {
 		unsigned char type = ELF64_ST_TYPE(list[i].st_info);
-		if (type == STT_FUNC && list[i].st_value) {
+		char *name = elf_strptr(syms->elf_data, (size_t)syms->strtab_idx, list[i].st_name);
+		if (type == STT_FUNC && !strcmp(symbol_name, name) && list[i].st_value) {
 			list[idx++] = list[i];
 		}
 	}
@@ -459,7 +484,7 @@ uintptr_t get_addr_from_lineno(dbg_symbols *syms, const char **file, int lineno)
 	}
 
 	if (!cudie) {
-		printf("No such *file found as \"%s\"\n", *file);
+		printf("No such file found as \"%s\"\n", *file);
 		return 0;
 	}
 
@@ -567,35 +592,36 @@ void print_source_at_current_pc(dbg_symbols *syms, uintptr_t pc, unsigned int li
 
 // to get the base address of dyn executable
 uintptr_t initialize_load_address(dbg_symbols *sym, pid_t pid) {
-	uintptr_t load_address = 0;
 	Elf64_Ehdr *header = elf64_getehdr(sym->elf_data);
-	if (header->e_type == ET_DYN) {
-		char path[100];
-		snprintf(path, sizeof(path), "/proc/%d/maps", pid);
-		FILE *file = fopen(path, "r");
-		if (!file) {
-			CRITICAL_PERROR("fopen");
-		}
-		char *line = NULL;
-		size_t len = 0;
-		uintptr_t addr = 0;
+	if (header->e_type != ET_DYN) return 0;
 
-		while (getline(&line, &len, file) != -1) {
-			uintptr_t start_addr, end_addr;
-			int parsed = sscanf(line, "%lx-%lx %*s %*x %*s %*d %*s", &start_addr, &end_addr);
-			// if it's parsed correctly
-			if (parsed == 2) {
-				addr = start_addr;
-				break;
-			}
-		}
-		if (addr != 0) {
-			DBG_LOG("load_address initialized with %#lx", addr);
-			load_address = addr;
-		}
-		free(line);
-		fclose(file);
+	uintptr_t load_address = 0;
+	char path[100];
+	snprintf(path, sizeof(path), "/proc/%d/maps", pid);
+	FILE *file = fopen(path, "r");
+	if (!file) {
+		CRITICAL_PERROR("fopen");
 	}
+
+	char *line = NULL;
+	size_t len = 0;
+	uintptr_t addr = 0;
+	while (getline(&line, &len, file) != -1) {
+		uintptr_t start_addr, end_addr;
+		int parsed = sscanf(line, "%lx-%lx %*s %*x %*s %*d %*s", &start_addr, &end_addr);
+		// if it's parsed correctly
+		if (parsed == 2) {
+			addr = start_addr;
+			break;
+		}
+	}
+	if (addr != 0) {
+		DBG_LOG("load_address initialized with %#lx", addr);
+		load_address = addr;
+	}
+
+	free(line);
+	fclose(file);
 	return load_address;
 }
 

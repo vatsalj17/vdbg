@@ -12,63 +12,6 @@
 #include "macro.h"
 #include "list.h"
 
-// The problem:
-// hashmap stores breakpoint as <running instr_addr, breakpoint_t>
-// but since now i am changing the breakpoint architecture, breakpoint can be of three types (instr_addr, sym, file:line)
-// so multiple breakpoint can be on same `running instr_addr`
-// if i use id as the key then the lookup will get slow
-// and my whole architecture is dependent on map lookup on the basis of instr_addr as i want to
-// always lookup at the pc
-//
-// currently struct bp only contains the instr instr_addr as in the executable. as inserted in the
-// pending breakpoint list. earlier the pending breakpoint list only consisted address so i used
-// to add the load_address and create a breakpoint and insert in map. now i have to insert alread created
-// bp in the map with the running instr_addr as the key. but bp isn't aware of running instr_addr so how will
-// it even enable or disable it
-//
-// i think i have to add another field in the bp struct that contains the running address or other option is that
-// i will modify the instr_addr by adding the load_address in it while adding it to the map but that will become
-// fucking complex cause i have to make sure each bp in the map is subtracted by load_address before termination of
-// the program.
-//
-// fuck! i thought it's going to be easy
-//
-// if i sperate the location data and breakpoint data where breakpoint points to the location struct its set at
-// and the location struct hold an array of breakpoints pointing at that location
-// so if this is done then in the map it will be stored as <running instr_addr, location struct>
-// this means that now map will also be used when program is not running unlike currently. that means
-// i have to init the breakpoint at the point user set it and insert it in the map.
-// no wait! don't insert it in the map yet. we need the `running instr_addr` to insert it in the map
-// as we run the program. we manually set that in the location struct and then insert it in map.
-//
-// but now we have another problem that how will we able to lookup with the `instr instr_addr`, that means
-// we have to linear search.
-// that means having two list, one for pending breakpoint along with the location
-// another way is to have list of pending locations and iterate through it while resolving. that's it
-// no, no. it's not the correct way. there's one more problem.
-// we need another list else how will we be able to breakpoint using it's id
-// to solve this we can create another map for <id, breakpoint> but this still doesn't solve the problem
-// of iterating through the all breakpoints while listing them
-//
-// then enable disable thing will be messy. since, a breakpoint to be actually disable at 0xcc level
-// all the breakpoints in the list of that location should be disabled.
-// well i have two choices either i just disable all the breakpoint at the location even if just a single breakpoint
-// is disabled pointing to that location or i wait to for the user to disable all the breakpoint at that location
-// then actually disable (that gdb does)
-//
-// okay okay, i think i will have to make the hashmap generic and then make two hasmaps
-// one will be <running_addr, bp_location> and other will be <id, breakpoint>
-// and then there will be a list of pending breakpoints
-// also since we are storing pre-allocated structs in the list, it would be
-// better to switch to intrusive-list than what i am currently using a
-// vector of pending addresses.
-// when the tracee is run, we create the locations at which bp is required.
-// and about that enable/disable thing. i will have an architecture such that
-// for any location to be disabled or enabled, all the breakpoints in it's list 
-// should be disabled or enabled respectively.
-//
-// i think it's solved (maybe)
-
 uint64_t global_id_counter = 1;
 
 // every runtime info is stored in bp_location_t
@@ -120,7 +63,8 @@ breakpoint_t *bp_init(bp_kind type, void *data, uintptr_t instr_addr) {
 		break;
 	}
 	case BP_LINENO: {
-		new->fl_pair = *(file_line_pair *)data;
+		// new->fl_pair = *(file_line_pair *)data;
+        memcpy(&new->fl_pair, data, sizeof(file_line_pair));
 		new->type = BP_LINENO;
 		break;
 	}
@@ -191,7 +135,10 @@ void bp_free(breakpoint_t *bp) {
 			loc_disable(bp->location);
 		}
 	}
-	if (bp->type == BP_SYMBOL) free(bp->symbol);
+	if (bp->type == BP_SYMBOL)
+		free(bp->symbol);
+	else if (bp->type == BP_LINENO)
+		free(bp->fl_pair.file);
 	free(bp);
 }
 
@@ -264,6 +211,9 @@ bp_location_t *loc_init(pid_t pid, uintptr_t running_addr, breakpoint_t *bp, boo
 		list_add_back(&new->bp_list, &bp->location_node);
 		bp->location = new;
 	}
+
+	// if it's temperory bp or the bp is enabled then just enable it
+	if (is_temp || bp->enable) loc_enable(new);
 
 	return new;
 }
@@ -361,10 +311,11 @@ void loc_free(bp_location_t *loc) {
 }
 
 void print_bp_hit_message_at_loc(bp_location_t *loc) {
+	assert(loc);
 	if (loc->is_temp) {
-        DBG_LOG("Hit temperory breakpoint at %#lx", loc->running_addr);
-        return;
-    }
+		DBG_LOG("Hit temperory breakpoint at %#lx", loc->running_addr);
+		return;
+	}
 
 	list_node *pos;
 	breakpoint_t *got_bp = NULL;
@@ -402,10 +353,10 @@ void print_bp_hit_message_at_loc(bp_location_t *loc) {
 }
 
 void print_breakpoint_list(list_node *pending_list_head) {
-    if (list_empty(pending_list_head)) {
-        printf("No breakpoints set\n");
-        return;
-    }
+	if (list_empty(pending_list_head)) {
+		printf("No breakpoints set\n");
+		return;
+	}
 
 	printf(BWHT "Id   Enabled Address          Type   Desc " RESET "\n");
 

@@ -1,0 +1,9 @@
+# this is a test script
+break main
+break add
+run
+source 10
+continue
+list
+continue
+exit

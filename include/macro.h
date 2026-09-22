@@ -43,6 +43,8 @@
 		}                                                                                          \
 	} while (0)
 
+#define ARG_ERR(fmt, ...) fprintf(stderr, "Invalid Arguments! " fmt "\n", ##__VA_ARGS__);
+
 #define UNUSED __attribute__((unused))
 
 // regular text

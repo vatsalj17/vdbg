@@ -3,14 +3,16 @@
 
 #include <stdbool.h>
 #include <elf.h>
+#include <sys/types.h>
 
-void print_src_file_outdated_warning();
+void print_src_file_outdated_warning(void);
 char *command_generator(const char *text, int state);
-char **split(char *str, char delim);
+char **split(char *str, char delim, char **free_it);
 bool is_prefix(const char *input, const char *command);
 bool is_number(const char *str);
+void print_memory_map(pid_t pid);
 void print_source(const char *file_name, unsigned line, unsigned lines_context);
-void list_current_dir();
+void list_current_dir(void);
 char *str_sigsegv_code(int si_code);
 void str_section_header_flag(Elf64_Xword flag, char flagbuf[20]);
 const char *str_section_header_type(Elf64_Word type);

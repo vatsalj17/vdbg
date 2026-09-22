@@ -40,9 +40,12 @@ static char **my_completion(const char *text, int start, int end __attribute__((
 }
 
 typedef struct Debugger {
-	char *process_name;            // the command
-	char **args;                   // arguments of the tracee
-	pid_t pid;                     // obvious
+	char *process_name; // the command
+	pid_t pid;          // pid of tracee
+	struct {
+		char **list;          // list of arguments of the tracee
+		size_t list_capacity; // capacity of the argments list
+	} args;
 	dbg_state state;               // tracking the state of debugger_t
 	map_t *breakpoints;            // hashtable of <id, breakpoint_t>
 	map_t *bp_locations;           // hashtable of <running_addr, bp_location_t>
@@ -59,22 +62,27 @@ debugger_t *dbg_init(const char *pname) {
 		exit(EXIT_FAILURE);
 	}
 
-	new->pid = 0;
+	new->syms = symbols_init(pname);
+	if (!new->syms) {
+		free(new);
+		return NULL;
+	}
+
 	new->process_name = strdup(pname);
-	new->args = calloc(MAX_ARGS, sizeof(char *));
-	new->args[0] = new->process_name;
+	new->pid = 0;
+
+	new->args.list = calloc(MAX_ARGS, sizeof(char *));
+	new->args.list[0] = new->process_name;
+	new->args.list_capacity = MAX_ARGS;
 
 	new->state = NOT_ACTIVE;
 	new->breakpoints = map_init(MAP_SIZE, (void (*)(void *))bp_free);
 	new->bp_locations = NULL;
-	// new->bp_locations = map_init(MAP_SIZE, (void (*)(void *))loc_free);
 
 	list_init(&new->pending_breakpoints);
 
 	new->pending_signal = 0;
 	new->load_address = 0; // initialized for static files initially
-
-	new->syms = symbols_init(pname);
 
 	return new;
 }
@@ -116,21 +124,33 @@ breakpoint_t *get_breakpoint_by_id(debugger_t *dbg, uint64_t id) {
 	return map_lookup(dbg->breakpoints, id);
 }
 
-void add_arguments_for_tracee(debugger_t *dbg, char **args) {
-	int i = 1;
-	while (dbg->args[i] != NULL) {
-		free(dbg->args[i]);
-		dbg->args[i] = NULL;
+void add_arguments_for_tracee(debugger_t *dbg, char **args_list) {
+	size_t i = 1;
+	// clear the existing arguments first
+	while (dbg->args.list[i] != NULL) {
+		free(dbg->args.list[i]);
+		dbg->args.list[i] = NULL;
 		i++;
 	}
-	i = 0;
-	int count = 1;
-	while (args[i] != NULL) {
-		char *str = strdup(args[i]);
-		dbg->args[count++] = str;
-		i++;
+
+	// then append the other argments
+	i = 1; // ignoring the first argument as it is the command itself
+	while (args_list[i] != NULL) {
+		// if it has reached it's limit
+		if (i == dbg->args.list_capacity) {
+			size_t new_cap = i * 2;
+			char **new_list = realloc(dbg->args.list, new_cap * sizeof(char *));
+			if (!new_list) {
+				DBG_ERR("either less ram or lots of args");
+				break;
+			}
+			dbg->args.list = new_list;
+			dbg->args.list_capacity = new_cap;
+		}
+		char *str = strdup(args_list[i]);
+		dbg->args.list[i++] = str;
 	}
-	DBG_LOG("added %d arguments", i);
+	DBG_LOG("added %zu arguments", i - 1);
 }
 
 void dbg_start(debugger_t *dbg) {
@@ -144,21 +164,19 @@ void dbg_start(debugger_t *dbg) {
 	}
 
 	char *input;
-	char last_input[100] = {0};
+	char *last_input = NULL;
 	// the cli infinite loop
 	while (1) {
 		if ((input = readline(HBLK "[" BHMAG "vdbg" HBLK "]" BHYEL "❯ " RESET)) != NULL) {
 			// avoid empty prompt
 			if (input[0] == '\0') {
 				DBG_LOG("empty cmdline. trying to run the last one if any");
-				if (last_input[0]) handle_command(dbg, last_input);
+				if (last_input) handle_command(dbg, last_input);
 			} else {
 				add_history(input);
+				if (last_input) free(last_input);
 				// saving the input so that we can rerun it
-				if (strlen(input) > 100)
-					last_input[0] = '\0';
-				else
-					strncpy(last_input, input, 100);
+				last_input = strdup(input);
 				handle_command(dbg, input);
 			}
 			free(input);
@@ -166,10 +184,11 @@ void dbg_start(debugger_t *dbg) {
 			// if EOF
 			if (dbg_kill_tracee(dbg)) {
 				printf("Bye..\n");
-				return;
+				break;
 			}
 		}
 	}
+	if (last_input) free(last_input);
 }
 
 void enable_all_breakpoints(debugger_t *dbg) {
@@ -224,14 +243,15 @@ static void handle_sigtrap(debugger_t *dbg, siginfo_t siginfo) {
 		// putting the pc back where it should be
 		// -1 because execution will go past the breakpoint
 		uintptr_t pc = get_pc(dbg->pid);
-		bp_location_t *loc = map_lookup(dbg->bp_locations, pc - 1);
+		pc -= 1;
+		bp_location_t *loc = map_lookup(dbg->bp_locations, pc);
 		// printf("pc where we hit bp: %#lx\n", pc);
-		set_pc(dbg->pid, pc - 1);
+		set_pc(dbg->pid, pc);
 
-        // print the message that breakpoint is hit
-        print_bp_hit_message_at_loc(loc);
+		// print the message that breakpoint is hit
+		print_bp_hit_message_at_loc(loc);
 
-		print_source_at_current_pc(dbg->syms, get_pc(dbg->pid), DEFAULT_LINE_CONTEXT);
+		print_source_at_current_pc(dbg->syms, pc, DEFAULT_LINE_CONTEXT);
 		return;
 	}
 	// this will trigger when signal was sent by single stepping
@@ -245,7 +265,7 @@ static void handle_sigtrap(debugger_t *dbg, siginfo_t siginfo) {
 	}
 }
 
-static siginfo_t get_signal_info(debugger_t *dbg) {
+static inline siginfo_t get_signal_info(debugger_t *dbg) {
 	siginfo_t info;
 	if (ptrace(PTRACE_GETSIGINFO, dbg->pid, NULL, &info) == -1) {
 		CRITICAL_PERROR("get_signal_info");
@@ -282,15 +302,18 @@ void wait_for_signal(debugger_t *dbg) {
 		handle_sigtrap(dbg, siginfo);
 		break;
 	case SIGSEGV: {
-		printf(BRED "!! " RESET "Caught " YEL "Segfault" RESET "! Reason: " CYN "%s\n" RESET,
+		printf(BRED "!! " RESET "Caught " YEL "Segfault" RESET "! Reason: " CYN "%s" RESET "\n",
 		       str_sigsegv_code(siginfo.si_code));
+		print_source_at_current_pc(dbg->syms, get_pc(dbg->pid), 3);
 		// saving the signal to pass it to the tracee
 		dbg->pending_signal = siginfo.si_signo;
 		break;
 	}
 	case SIGABRT: {
 		// mirrored the SIGSEGV handling
-		printf("Tracee terminated by SIGABRT\n");
+		printf(BRED "!! " RESET "Tracee terminated by " YEL "SIGABRT" RESET "\n");
+		// TODO: since this stops at the libc so can't print the source code yet
+		// will make it work after adding support of shared library
 		dbg->pending_signal = siginfo.si_signo;
 		break;
 	}
@@ -327,12 +350,10 @@ static void resolve_pending_breakpoints(debugger_t *dbg) {
 			loc_append_breakpoint_to_list(loc, bp);
 		} else {
 			loc = loc_init(dbg->pid, running_addr, bp, false);
-			if (map_insert(dbg->bp_locations, running_addr, loc)) {
-				if (bp_is_enabled(bp)) loc_enable(loc);
-			} else {
-				DBG_LOG("Breakpoint already set at %#lx", running_addr);
-				DBG_LOG("freeing this breakpoint");
-				loc_free(loc);
+			if (map_insert(dbg->bp_locations, running_addr, loc) == false) {
+				// since we are already doing lookup before inserting
+				// so map_insert shouldn't fail
+				CRITICAL("Something is wrong in the logic");
 			}
 		}
 	}
@@ -344,7 +365,7 @@ static void spawn_tracee(debugger_t *dbg) {
 	if (pid == 0) {
 		ptrace(PTRACE_TRACEME, pid, NULL, NULL);
 		personality(ADDR_NO_RANDOMIZE);
-		execv(dbg->process_name, dbg->args);
+		execv(dbg->process_name, dbg->args.list);
 	} else {
 		DBG_LOG("Running %s ....", dbg->process_name);
 		dbg->pid = pid;
@@ -379,8 +400,8 @@ void restart(debugger_t *dbg) {
 	spawn_tracee(dbg);
 }
 
-static void add_and_set_bp_for_running_tracee(debugger_t *dbg, uintptr_t instr_addr,
-                                              breakpoint_t *bp) {
+static inline void add_and_set_bp_for_running_tracee(debugger_t *dbg, uintptr_t instr_addr,
+                                                     breakpoint_t *bp) {
 	if (dbg->state == NOT_ACTIVE) {
 		return;
 	}
@@ -399,7 +420,6 @@ static void add_and_set_bp_for_running_tracee(debugger_t *dbg, uintptr_t instr_a
 		// if location alread exist for a breakpoint
 		loc_append_breakpoint_to_list(loc, bp);
 	}
-	loc_enable(loc);
 }
 
 void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t instr_addr, bool quiet) {
@@ -450,14 +470,17 @@ void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno)
 	if (!filename && dbg->state == ACTIVE) {
 		Dwarf_Die *cudie = get_cudie_from_pc(dbg->syms, get_pc(dbg->pid));
 		const char *name = dwarf_diename(cudie);
-		if (name) filename = name;
+		if (name)
+			filename = name;
+		else
+			return;
 	}
 
 	uintptr_t instr_addr = get_addr_from_lineno(dbg->syms, &filename, lineno);
 	if (instr_addr == 0) return;
 
 	file_line_pair pair = {
-	    .file = filename,
+	    .file = strdup(filename),
 	    .lineno = lineno,
 	};
 	breakpoint_t *bp = bp_init(BP_LINENO, (void *)&pair, instr_addr);
@@ -477,11 +500,9 @@ void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno)
 bool set_temp_bp_location(debugger_t *dbg, uintptr_t running_addr) {
 	assert(dbg->state == ACTIVE);
 	bp_location_t *loc = loc_init(dbg->pid, running_addr, NULL, true);
-	if (map_insert(dbg->bp_locations, running_addr, loc)) {
-		loc_enable(loc);
-	} else {
-		DBG_LOG("Breakpoint already set at %#lx", running_addr);
-		DBG_LOG("freeing this breakpoint");
+	if (map_insert(dbg->bp_locations, running_addr, loc) == false) {
+		DBG_LOG("bp_locations already set at %#lx", running_addr);
+		DBG_LOG("freeing it");
 		loc_free(loc);
 		return false;
 	}
@@ -496,7 +517,6 @@ void unset_temp_bp_location(debugger_t *dbg, uintptr_t running_addr) {
 		return;
 	}
 	DBG_LOG("Disabling temp bp_location at addr %#lx", running_addr);
-	loc_disable(loc);
 	map_delete(dbg->bp_locations, running_addr);
 }
 
@@ -565,10 +585,10 @@ void dbg_free(debugger_t *dbg) {
 
 	assert(dbg->bp_locations == NULL); // assuming that it's freed
 
-	for (int i = 1; dbg->args[i] != NULL; i++)
-		free(dbg->args[i]);
+	for (int i = 1; dbg->args.list[i] != NULL; i++)
+		free(dbg->args.list[i]);
 	symbols_free(dbg->syms);
 	free(dbg->process_name);
-	free(dbg->args);
+	free(dbg->args.list);
 	free(dbg);
 }

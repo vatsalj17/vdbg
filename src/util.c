@@ -1,18 +1,20 @@
 #include <assert.h>
 #include <ctype.h>
+#include <fcntl.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <asm-generic/siginfo.h>
 #include <dirent.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "util.h"
 #include "macro.h"
 #include "commands.h"
 
-#define BUFSIZE 32
-
-void print_src_file_outdated_warning() {
+void print_src_file_outdated_warning(void) {
 	printf(RED "\n[" BYEL " Warning: " RESET "source code is modified" RED " \t]\n");
 	printf("[" RESET " pls recompile the code and then debug " RED "]\n" RESET);
 }
@@ -34,18 +36,31 @@ char *command_generator(const char *text, int state) {
 	return NULL;
 }
 
-char **split(char *str, char delim) {
-	char **tokens = calloc(BUFSIZE, sizeof(char *));
+char **split(char *str, char delim, char **free_it) {
+	// making the copy of str so that it isn't modified
+	char *to_parse = strdup(str);
+	size_t tokens_list_cap = 32;
+	char **tokens = malloc(tokens_list_cap * sizeof(char *));
 	char *delimiter = (char[]){delim, '\0'};
-	char *token = strtok(str, delimiter);
-	int count = 0;
+	char *token = strtok(to_parse, delimiter);
+
+	size_t count = 0;
 	while (token != NULL) {
+		if (count == tokens_list_cap) {
+			tokens_list_cap *= 2;
+			tokens = realloc(tokens, tokens_list_cap * sizeof(char *));
+            if (!tokens) {
+                printf("either buy more ram or give less argments");
+                free(to_parse);
+                return NULL;
+            }
+		}
 		tokens[count++] = token;
 		token = strtok(NULL, delimiter);
 	}
-	// for (int i = 0; tokens[i] != NULL; i++) {
-	//     printf("%s\n", tokens[i]);
-	// }
+
+	tokens[count] = NULL;
+    *free_it = to_parse;
 	return tokens;
 }
 
@@ -62,6 +77,39 @@ bool is_number(const char *str) {
 	}
 	return true;
 }
+
+#define BUFSIZE (1 << 20)
+
+void print_memory_map(pid_t pid) {
+	char path[32];
+	snprintf(path, sizeof(path), "/proc/%d/maps", pid);
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        perror("open");
+        return;
+    }
+
+    char buf[BUFSIZE]; // 1 mb should be enough that it reads in one go
+    ssize_t r;
+    while (1) {
+        r = read(fd, buf, BUFSIZE);
+        if (r < 0) {
+            perror("read");
+            break;
+        }
+        if (r == 0) break;
+
+        ssize_t w = write(STDOUT_FILENO, buf, (size_t)r);
+        if (w < 0) {
+            perror("write");
+            break;
+        }
+    }
+
+    close(fd);
+}
+#undef BUFSIZE
 
 static inline void print_line_prefix(unsigned line_no, unsigned target_line) {
 	bool is_target = (line_no == target_line);
@@ -104,21 +152,123 @@ void print_source(const char *file_name, unsigned line, unsigned lines_context) 
 	fclose(f);
 }
 
+static size_t display_length(const char *s) {
+	size_t length = 0;
+	for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+		switch (*p) {
+		case '\n':
+		case '\t':
+		case '\r':
+		case '\b':
+		case '\\':
+		case '\x1b':
+			length += 2;
+			break;
+		default:
+			if (*p < 0x20 || *p == 0x7f)
+				length += 4;
+			else
+				length++;
+			break;
+		}
+	}
+	return length;
+}
+
+// to handle those ugly $'a\nb' type files. any sane person would never do that but still i am handling it
+static void print_filename(const char *name) {
+	for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+		switch (*p) {
+		case '\n':
+			fputs("\\n", stdout);
+			break;
+		case '\t':
+			fputs("\\t", stdout);
+			break;
+		case '\r':
+			fputs("\\r", stdout);
+			break;
+		case '\b':
+			fputs("\\b", stdout);
+			break;
+		case '\\':
+			fputs("\\\\", stdout);
+			break;
+		default:
+			if (*p < 0x20 || *p == 0x7f)
+				printf("\\x%02x", *p);
+			else
+				putchar(*p);
+		}
+	}
+}
+
 void list_current_dir(void) {
 	struct dirent **entries;
-
-	int count = scandir(".", &entries, NULL, alphasort);
-	if (count == -1) {
-		perror("scandir");
+	int files_count = scandir(".", &entries, NULL, alphasort);
+	if (files_count == -1) {
+		DBG_PERROR("scandir");
 		return;
 	}
+	if (files_count == 0) return;
 
-    // TODO: give better output
-	for (int i = 0; i < count; i++) {
-		printf("%s\n", entries[i]->d_name);
-		free(entries[i]);
+	// getting the size of the terminal
+	struct winsize ws;
+	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0) {
+		DBG_LOG("Couldn't get terminal size! printing everything in single column");
+		for (int i = 0; i < files_count; i++) {
+			printf("%s\n", entries[i]->d_name);
+			free(entries[i]);
+		}
+		goto cleanup;
+	}
+	int width = ws.ws_col;
+
+	// track the max length of the file in current dir
+	size_t max_len = 0;
+	for (int i = 0; i < files_count; i++) {
+		size_t len = display_length(entries[i]->d_name);
+		if (len > max_len) max_len = len;
+	}
+	if (max_len == 0) CRITICAL("Something went very wrong in your logic");
+
+	int column_len = (int)max_len + 2;
+	int no_of_columns = width / column_len;
+	if (no_of_columns < 1) no_of_columns = 1;
+
+	int no_of_rows =
+	    (files_count / no_of_columns) + (no_of_columns - (files_count % no_of_columns));
+	DBG_LOG("file: %d, clen: %d, cols: %d, rows: %d, width: %d",
+	        files_count,
+	        column_len,
+	        no_of_columns,
+	        no_of_rows,
+	        width);
+
+	for (int r = 0; r < no_of_rows; r++) {
+		for (int c = 0; c < no_of_columns; c++) {
+			int col_pos = (c * column_len) + 1;
+			// move cursor the column position
+			printf("\e[%dG", col_pos);
+
+			// print the file name
+			int index = (c * no_of_rows) + r;
+			if (index >= files_count) break;
+			// printf("index: %d", index);
+			if (entries[index]->d_type == DT_DIR) {
+				printf(BWHT);
+				print_filename(entries[index]->d_name);
+				printf("/ " RESET);
+			} else {
+				print_filename(entries[index]->d_name);
+				printf("  ");
+			}
+			free(entries[index]);
+		}
+		printf("\n");
 	}
 
+cleanup:
 	free(entries);
 }
 

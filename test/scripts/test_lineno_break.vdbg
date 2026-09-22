@@ -1,0 +1,12 @@
+break multi_func.c:8
+break multi_func.c:14
+break multi_func.c:26
+list
+run
+continue
+continue
+enable 1
+disable 2
+list
+continue
+exit

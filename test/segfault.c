@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
 
     int choice = atoi(argv[1]);
 
-    test_fn tests[] = {
+    test_fn tests[20] = {
         segfault_null_deref,
         segfault_use_after_free,
         segfault_double_free,

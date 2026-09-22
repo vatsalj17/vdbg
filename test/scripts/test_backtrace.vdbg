@@ -1,0 +1,7 @@
+break fib
+run
+continue
+continue
+continue
+backtrace
+exit

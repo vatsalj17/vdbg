@@ -1,6 +1,7 @@
 #ifndef LIST_H
 #define LIST_H
 
+#include <assert.h>
 #include <stddef.h> // for offsetof
 
 // straight from the linux kernel :)
@@ -32,6 +33,7 @@ static inline void list_init(list_node *head) {
 
 // insert new in between prev and next
 static inline void list_add(list_node *new, list_node *prev, list_node *next) {
+    assert(new && prev && next);
 	new->next = next;
 	new->prev = prev;
 	prev->next = new;

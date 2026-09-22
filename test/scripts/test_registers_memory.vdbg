@@ -1,0 +1,12 @@
+break func_c
+run
+register dump
+register read rax
+register read rip
+register read rsp
+register read rbp
+register write rax 0xdeadbeef
+register read rax
+memory read 0x401000
+memory read 0x401146
+exit

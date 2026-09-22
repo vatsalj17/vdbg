@@ -1,0 +1,13 @@
+header
+sections
+sections .text
+sections .debug
+symbols main
+symbols func
+functions
+functions func
+break main
+run
+vmmap
+continue
+exit
