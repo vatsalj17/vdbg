@@ -118,9 +118,9 @@ void run_script(debugger_t *dbg, char *script_path) {
 	char *line = NULL;
 	size_t len = 0;
 	while (getline(&line, &len, fp) != EOF) {
-        if (line[0] == '#') continue; // using # as comment
+		if (line[0] == '#') continue; // using # as comment
 		line[strcspn(line, "\n")] = '\0';
-        if (line[0] == '\0') continue; // skip empty lines
+		if (line[0] == '\0') continue; // skip empty lines
 		handle_command(dbg, line);
 	}
 

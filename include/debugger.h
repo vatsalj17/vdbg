@@ -16,6 +16,7 @@ typedef enum Debugger_State { ACTIVE, NOT_ACTIVE } dbg_state;
 debugger_t *dbg_init(const char *pname);
 void dbg_start(debugger_t *dbg);
 pid_t dbg_get_pid(debugger_t *dbg);
+char *dbg_get_tracee_name(debugger_t *dbg);
 uintptr_t dbg_get_load_address(debugger_t *dbg);
 dbg_state dbg_get_state(debugger_t *dbg);
 map_t *dbg_get_breakpoints(debugger_t *dbg);

@@ -64,7 +64,7 @@ breakpoint_t *bp_init(bp_kind type, void *data, uintptr_t instr_addr) {
 	}
 	case BP_LINENO: {
 		// new->fl_pair = *(file_line_pair *)data;
-        memcpy(&new->fl_pair, data, sizeof(file_line_pair));
+		memcpy(&new->fl_pair, data, sizeof(file_line_pair));
 		new->type = BP_LINENO;
 		break;
 	}

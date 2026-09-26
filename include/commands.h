@@ -9,7 +9,7 @@ typedef struct {
 	const char *name;
 	cmd_handler handler;
 	bool requires_running_pid;
-    bool requires_dwarf_symbols;
+	bool requires_dwarf_symbols;
 	const char *help_text;
 } command_entry;
 
@@ -43,5 +43,6 @@ void cmd_source(debugger_t *dbg, char **args);
 void cmd_ls(debugger_t *dbg, char **args);
 void cmd_clear(debugger_t *dbg, char **args);
 void cmd_vmmap(debugger_t *dbg, char **args);
+void cmd_disassemble(debugger_t *dbg, char **args);
 
 #endif

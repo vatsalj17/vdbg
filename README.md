@@ -19,7 +19,7 @@ A Linux debugger built from scratch in C using `ptrace`. Made this to understand
 - `hashmap.c` + `list.c`: custom hashmap for breakpoint lookup by address/id, intrusive linked list for pending breakpoints
 
 ## Build
-Needs `gcc`, `make`, `libreadline`, `elfutils`.
+Needs `gcc`, `make`, `libreadline`, `elfutils`, `capstone`.
 ```bash
 git clone https://github.com/vatsalj17/vdbg.git
 cd vdbg
@@ -60,6 +60,7 @@ vdbg --script commands.vdbg ./a.out
 | `sections [name]` | List section headers |
 | `symbols [name]` | List symbols |
 | `functions [name]` | List functions |
+| `disassemble <func>` | Print the disassembly |
 | `vmmap` | Print virtual memory layout |
 | `help` | Show command list |
 | `exit` | Exit |
@@ -67,7 +68,6 @@ vdbg --script commands.vdbg ./a.out
 ## Working On
 * Variable inspection
 * Dynamic loading of shared libraries
-* Disassembly support
 * Some binary static analysis features
    * [x] elf header
    * [x] sections

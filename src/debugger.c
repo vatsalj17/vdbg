@@ -92,6 +92,10 @@ pid_t dbg_get_pid(debugger_t *dbg) {
 	return dbg->pid;
 }
 
+char *dbg_get_tracee_name(debugger_t *dbg) {
+	return dbg->process_name;
+}
+
 uintptr_t dbg_get_load_address(debugger_t *dbg) {
 	return dbg->load_address;
 }

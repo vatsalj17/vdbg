@@ -49,18 +49,18 @@ char **split(char *str, char delim, char **free_it) {
 		if (count == tokens_list_cap) {
 			tokens_list_cap *= 2;
 			tokens = realloc(tokens, tokens_list_cap * sizeof(char *));
-            if (!tokens) {
-                printf("either buy more ram or give less argments");
-                free(to_parse);
-                return NULL;
-            }
+			if (!tokens) {
+				printf("either buy more ram or give less argments");
+				free(to_parse);
+				return NULL;
+			}
 		}
 		tokens[count++] = token;
 		token = strtok(NULL, delimiter);
 	}
 
 	tokens[count] = NULL;
-    *free_it = to_parse;
+	*free_it = to_parse;
 	return tokens;
 }
 
@@ -84,30 +84,30 @@ void print_memory_map(pid_t pid) {
 	char path[32];
 	snprintf(path, sizeof(path), "/proc/%d/maps", pid);
 
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        perror("open");
-        return;
-    }
+	int fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		perror("open");
+		return;
+	}
 
-    char buf[BUFSIZE]; // 1 mb should be enough that it reads in one go
-    ssize_t r;
-    while (1) {
-        r = read(fd, buf, BUFSIZE);
-        if (r < 0) {
-            perror("read");
-            break;
-        }
-        if (r == 0) break;
+	char buf[BUFSIZE]; // 1 mb should be enough that it reads in one go
+	ssize_t r;
+	while (1) {
+		r = read(fd, buf, BUFSIZE);
+		if (r < 0) {
+			perror("read");
+			break;
+		}
+		if (r == 0) break;
 
-        ssize_t w = write(STDOUT_FILENO, buf, (size_t)r);
-        if (w < 0) {
-            perror("write");
-            break;
-        }
-    }
+		ssize_t w = write(STDOUT_FILENO, buf, (size_t)r);
+		if (w < 0) {
+			perror("write");
+			break;
+		}
+	}
 
-    close(fd);
+	close(fd);
 }
 #undef BUFSIZE
 
@@ -236,8 +236,7 @@ void list_current_dir(void) {
 	int no_of_columns = width / column_len;
 	if (no_of_columns < 1) no_of_columns = 1;
 
-	int no_of_rows =
-	    (files_count / no_of_columns) + (no_of_columns - (files_count % no_of_columns));
+	int no_of_rows = (files_count / no_of_columns) + ((files_count % no_of_columns) ? 1 : 0);
 	DBG_LOG("file: %d, clen: %d, cols: %d, rows: %d, width: %d",
 	        files_count,
 	        column_len,

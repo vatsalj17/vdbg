@@ -172,7 +172,7 @@ void step_over(debugger_t *dbg) {
 }
 
 static const char *print_frame(debugger_t *dbg, dbg_symbols *syms, uintptr_t pc, pid_t pid,
-                                      uintptr_t load_address, bool is_first) {
+                               uintptr_t load_address, bool is_first) {
 	Dwarf_Die func_die = {0};
 	get_func_die_from_pc(syms, pc, &func_die, load_address);
 
@@ -213,13 +213,13 @@ static const char *print_frame(debugger_t *dbg, dbg_symbols *syms, uintptr_t pc,
 	// changing the absolute file path to relative one
 	if (compilation_dir) {
 		const char *rel = filename;
-        const char *dir = compilation_dir;
-        while (*rel == *dir) {
-            rel++;
-            dir++;
-        }
-        // printf("comp: %s\n", compilation_dir);
-        // printf("file: %s\n", filename);
+		const char *dir = compilation_dir;
+		while (*rel == *dir) {
+			rel++;
+			dir++;
+		}
+		// printf("comp: %s\n", compilation_dir);
+		// printf("file: %s\n", filename);
 		if (*rel == '/') rel++;
 		filename = rel;
 	}

@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -std=c23 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
 CFLAGS += -Wall -Wextra -Wshadow -Wconversion -Wnull-dereference -Wsign-conversion -Wformat=2
-LDFLAGS = -lreadline -lelf -ldw
+LDFLAGS = -lreadline -lelf -ldw -lcapstone
 
 DEV_CFLAGS = $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
 DEV_LDFLAGS = $(LDFLAGS) -fsanitize=address,undefined

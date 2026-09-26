@@ -376,6 +376,11 @@ Elf64_Sym *get_valid_func_symbols(dbg_symbols *syms, const char *symbol_name, si
 		Elf_Scn **temp = get_sections(syms, NULL, &temps);
 		free(temp);
 	}
+	if (!syms->symbol_table) {
+		printf("No symbols table found\n");
+		*return_size = 0;
+		return NULL;
+	}
 	size_t list_size = 0;
 	Elf64_Sym *list =
 	    get_symbols(syms, symbol_name, syms->symbol_table, (size_t)syms->strtab_idx, &list_size);
@@ -401,6 +406,12 @@ void list_all_functions(dbg_symbols *syms, const char *symbol_name) {
 		Elf_Scn **temp = get_sections(syms, NULL, &temps);
 		free(temp);
 	}
+	if (!syms->symbol_table) {
+		printf("No symbols table found\n");
+		return;
+	}
+
+	// TODO: print the runtime address too if the tracee is running
 
 	size_t list_size = 0;
 	Elf64_Sym *list =

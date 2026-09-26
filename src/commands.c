@@ -11,6 +11,7 @@
 #include "macro.h"
 #include "symbols.h"
 #include "stepping.h"
+#include "disassemble.h"
 
 const command_entry commands[] = {
     {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
@@ -20,6 +21,7 @@ const command_entry commands[] = {
     {"clear", cmd_clear, false, false, "Clears the screen"},
     {"delete", cmd_delete, false, false, "Delete specific breakpoint or all if not specified"},
     {"disable", cmd_disable, false, false, "Disable any breakpoint"},
+    {"disassemble", cmd_disassemble, false, false, "Print the disassembly"},
     {"exit", cmd_exit, false, false, "Exit the debugger"},
     {"enable", cmd_enable, false, false, "Enable any breakpoint"},
     {"finish", cmd_finish, true, true, "Skip the current function"},
@@ -294,10 +296,14 @@ void cmd_mem(debugger_t *dbg, char **args) {
 	}
 }
 
+void cmd_disassemble(debugger_t *dbg, char **args) {
+	print_disassembly_of_function(dbg, args[1]);
+}
+
 void handle_command(debugger_t *dbg, char *input) {
 	char *temp = NULL;
 	char **args = split(input, ' ', &temp);
-    if (args == NULL) return;
+	if (args == NULL) return;
 
 	char *command = args[0];
 	if (command == NULL) {
