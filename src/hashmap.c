@@ -1,5 +1,6 @@
 #include "hashmap.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 
@@ -27,15 +28,17 @@ static inline uint32_t map_index(map_t *ht, uint64_t key) {
 map_t *map_init(uint32_t size, cleanupfunction *cf) {
 	if (size == 0) return NULL;
 	map_t *ht = malloc(sizeof(map_t));
-	ht->size = size;
-	if (cf) {
-		ht->cf = cf;
-	} else {
-		ht->cf = NULL;
-	}
+	ht->cf = cf;
+
+    // we can't have even size since it will lead to 
+    // having __builtin_ctz(size) = 0 so shift_bits 
+    // will become 64 and we can't shift a 64 bit number by 64 bits
+    if (size & 1) size++; 
+
 	ht->shift_bits = 64 - (uint8_t)__builtin_ctz(size); // 64 - log2(size)
 	// __builtin_ctz counts trailing zeros from the lsb
 
+    ht->size = size;
 	ht->elements = calloc(ht->size, sizeof(entry *));
 	return ht;
 }
@@ -83,7 +86,7 @@ void map_delete(map_t *ht, uintptr_t key) {
 	} else {
 		prev->next = temp->next;
 	}
-	ht->cf(temp->obj);
+	if (ht->cf) ht->cf(temp->obj);
 	free(temp);
 }
 
@@ -94,8 +97,7 @@ void map_free(map_t *ht) {
 			entry *temp = ht->elements[i];
 			if (temp == NULL) break;
 			ht->elements[i] = ht->elements[i]->next;
-			assert(ht->cf);
-			ht->cf(temp->obj);
+			if (ht->cf) ht->cf(temp->obj);
 			free(temp);
 		}
 	}

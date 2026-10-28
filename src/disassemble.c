@@ -5,8 +5,10 @@
 #include <capstone/x86.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <string.h>
 
 #include "debugger.h"
+#include "hashmap.h"
 #include "macro.h"
 #include "registers.h"
 
@@ -78,6 +80,7 @@ static void print_oprand_string(char op_str[160], cs_x86_op operands[8], uint8_t
 			break;
 		}
 		}
+
 		// print till end or comma
 		while (op_str[str_iter] != ',' && str_iter < 160) {
 			putchar(op_str[str_iter++]);
@@ -91,8 +94,61 @@ static void print_oprand_string(char op_str[160], cs_x86_op operands[8], uint8_t
 	}
 }
 
+static void print_instruction_disas(cs_insn *instructions, size_t instr_count,
+                                    uintptr_t load_address, uintptr_t pc, struct func_entry *funcs,
+                                    size_t funcs_size) {
+	uint16_t max_size = 0;
+	for (size_t i = 0; i < instr_count; i++) {
+		if (instructions[i].size > max_size) max_size = instructions[i].size;
+	}
+
+	map_t *funcs_map = map_init((uint32_t)funcs_size, NULL);
+
+	for (size_t i = 0; i < instr_count; i++) {
+		cs_insn instruction = instructions[i];
+		cs_detail *det = instruction.detail;
+		assert(det);
+		cs_x86 xins = det->x86;
+
+		uintptr_t curr_addr = instruction.address + load_address;
+
+		// if curr_addr is the pc then show the arrow
+		if (curr_addr == pc)
+			printf(BGRN " > ");
+		else
+			printf("   " BWHT);
+
+		printf("%lx" RESET ": ", curr_addr);
+		print_bytes(instruction.bytes, instruction.size, max_size);
+		printf(YEL "%-6s " RESET, instruction.mnemonic);
+		print_oprand_string(instruction.op_str, xins.operands, xins.op_count);
+
+		// now looking for function names to print if the instruction is `call`
+		char *func_name = NULL;
+		if (!strcmp(instruction.mnemonic, "call") && xins.operands->type == X86_OP_IMM) {
+			uintptr_t imm_val = strtoul(instruction.op_str, NULL, 16);
+			if ((func_name = map_lookup(funcs_map, imm_val)) == NULL) {
+				for (size_t j = 0; j < funcs_size; j++) {
+					if (imm_val == funcs[j].addr) {
+						func_name = funcs[j].func_name;
+						map_insert(funcs_map, imm_val, func_name);
+					}
+				}
+			}
+		}
+
+		if (func_name) printf(RESET " <" GRN "%s" RESET ">", func_name);
+
+		printf(RESET "\n");
+	}
+
+	map_free(funcs_map);
+	printf("\n");
+}
+
+// this function prints disassembly of functions
 static void disassemble(char *tracee, uintptr_t addr, size_t size, uintptr_t load_address,
-                        uintptr_t pc) {
+                        uintptr_t pc, struct func_entry *funcs, size_t funcs_size) {
 	csh handle;
 	if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK) {
 		cs_error(handle);
@@ -114,32 +170,8 @@ static void disassemble(char *tracee, uintptr_t addr, size_t size, uintptr_t loa
 	if (count <= 0) {
 		cs_error(handle);
 	}
-	uint16_t max_size = 0;
-	for (size_t i = 0; i < count; i++) {
-		if (instr[i].size > max_size) max_size = instr[i].size;
-	}
 
-	for (size_t i = 0; i < count; i++) {
-		cs_insn instruction = instr[i];
-		cs_detail *det = instruction.detail;
-		assert(det);
-		cs_x86 xins = det->x86;
-
-		uintptr_t curr_addr = instruction.address + load_address;
-
-		// if curr_addr is the pc then show the arrow
-		if (curr_addr == pc)
-			printf(BGRN " > ");
-		else
-			printf("   " BWHT);
-
-		printf("%lx" RESET ": ", curr_addr);
-		print_bytes(instruction.bytes, instruction.size, max_size);
-		printf(YEL "%-6s " RESET, instruction.mnemonic);
-		print_oprand_string(instruction.op_str, xins.operands, xins.op_count);
-		printf(RESET "\n");
-	}
-	printf("\n");
+	print_instruction_disas(instr, count, load_address, pc, funcs, funcs_size);
 
 	cs_free(instr, count);
 	free(buf);
@@ -170,17 +202,29 @@ void print_disassembly_of_function(debugger_t *dbg, const char *function_name) {
 	if (!load_address && dbg_is_active(dbg)) load_address = dbg_get_load_address(dbg);
 
 	size_t size;
-	Elf64_Sym *functions = get_valid_func_symbols(dbg_get_symbols(dbg), function_name, &size, NULL);
+	struct func_entry *functions = get_valid_func_symbols(dbg_get_symbols(dbg), &size);
 	if (size == 0) {
-		printf("No function found with name %s\n", function_name);
+		printf("No functions found in this file\n");
+		return;
 	}
+	bool function_found = false;
+
 	for (size_t i = 0; i < size; i++) {
+		// if not the match then continue
+		if (strcmp(function_name, functions[i].func_name)) continue;
+
+		function_found = true;
 		printf("\nDisassembly of " BYEL "%s" RESET ":\n", function_name);
 		disassemble(dbg_get_tracee_name(dbg),
-		            functions[i].st_value,
-		            functions[i].st_size,
+		            functions[i].addr,
+		            functions[i].size,
 		            load_address,
-		            pc);
+		            pc,
+		            functions,
+		            size);
 	}
-	free(functions);
+
+	if (!function_found) {
+		printf("No function found with name %s\n", function_name);
+	}
 }

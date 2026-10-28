@@ -39,10 +39,12 @@ void cmd_header(debugger_t *dbg, char **args);
 void cmd_functions(debugger_t *dbg, char **args);
 void cmd_backtrace(debugger_t *dbg, char **args);
 void cmd_list(debugger_t *dbg, char **args);
-void cmd_source(debugger_t *dbg, char **args);
+void cmd_context(debugger_t *dbg, char **args);
 void cmd_ls(debugger_t *dbg, char **args);
 void cmd_clear(debugger_t *dbg, char **args);
 void cmd_vmmap(debugger_t *dbg, char **args);
 void cmd_disassemble(debugger_t *dbg, char **args);
+void cmd_plt(debugger_t *dbg, char **args);
+void cmd_source(debugger_t *dbg, char **args);
 
 #endif

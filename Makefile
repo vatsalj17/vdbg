@@ -3,10 +3,10 @@ CFLAGS = -std=c23 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
 CFLAGS += -Wall -Wextra -Wshadow -Wconversion -Wnull-dereference -Wsign-conversion -Wformat=2
 LDFLAGS = -lreadline -lelf -ldw -lcapstone
 
-DEV_CFLAGS = $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
+DEV_CFLAGS = $(CFLAGS) -g -fsanitize=address,undefined -fno-omit-frame-pointer -fstack-protector-strong
 DEV_LDFLAGS = $(LDFLAGS) -fsanitize=address,undefined
 
-DEBUG_CFLAGS = $(DEV_CFLAGS) -g3 -O0 -DDEBUG
+DEBUG_CFLAGS = $(CFLAGS) -g3 -O0 -DDEBUG -fno-omit-frame-pointer
 
 BUILD_CFLAGS = $(CFLAGS) -O2 -s -fstack-protector-strong -fPIE -flto
 BUILD_LDFLAGS = $(LDFLAGS) -pie -Wl,-z,relro,-z,now -flto
@@ -24,7 +24,7 @@ all: ACTIVE_LDFLAGS = $(DEV_LDFLAGS)
 all: $(OBJ_DIR) $(TARGET)
 
 debug: ACTIVE_CFLAGS = $(DEBUG_CFLAGS)
-debug: ACTIVE_LDFLAGS = $(DEV_LDFLAGS)
+debug: ACTIVE_LDFLAGS = $(LDFLAGS)
 debug: $(OBJ_DIR) $(TARGET)
 
 build: ACTIVE_CFLAGS = $(BUILD_CFLAGS)

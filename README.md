@@ -53,15 +53,17 @@ vdbg --script commands.vdbg ./a.out
 | `next` | Step over |
 | `finish` | Step out of current function |
 | `backtrace` | Print call stack |
-| `source [lines]` | Show source at current PC |
+| `context [lines]` | Show source at current PC |
 | `register dump/read/write` | Manage registers |
 | `memory read/write <addr>` | Read/write memory |
 | `header` | Print ELF header |
 | `sections [name]` | List section headers |
 | `symbols [name]` | List symbols |
 | `functions [name]` | List functions |
+| `plt` | Print procedure linkage table |
 | `disassemble <func>` | Print the disassembly |
 | `vmmap` | Print virtual memory layout |
+| `source <file>` | Execute commands from script |
 | `help` | Show command list |
 | `exit` | Exit |
 
@@ -75,5 +77,5 @@ vdbg --script commands.vdbg ./a.out
    * [x] functions
    * [ ] program headers
    * [ ] strings
-   * [ ] relocations
-   * [ ] plt/got
+   * [x] plt 
+   * [ ] got

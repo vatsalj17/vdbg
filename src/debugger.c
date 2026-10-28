@@ -13,10 +13,8 @@
 #include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <elf.h>
 #include <elfutils/libdw.h>
-#include <elfutils/libdwfl.h>
-#include <libelf.h>
-#include <dwarf.h>
 
 #include "commands.h"
 #include "registers.h"
@@ -31,7 +29,7 @@
 #define MAX_ARGS 50
 
 // enabling tab completion support for speed
-static char **my_completion(const char *text, int start, int end __attribute__((unused))) {
+static char **my_completion(const char *text, int start, int end UNUSED) {
 	rl_attempted_completion_over = 1;
 	if (start == 0) {
 		return rl_completion_matches(text, command_generator);
@@ -171,7 +169,11 @@ void dbg_start(debugger_t *dbg) {
 	char *last_input = NULL;
 	// the cli infinite loop
 	while (1) {
-		if ((input = readline(HBLK "[" BHMAG "vdbg" HBLK "]" BHYEL "❯ " RESET)) != NULL) {
+		// using markers to tell readline about non printing characters
+		// \001 -> start of non printable chars
+		// \002 -> end of non printable chars
+		if ((input = readline("\001" HBLK "\002[\001" BHMAG "\002vdbg\001" HBLK "\002]\001" BHYEL
+		                      "\002❯ \001" RESET "\002")) != NULL) {
 			// avoid empty prompt
 			if (input[0] == '\0') {
 				DBG_LOG("empty cmdline. trying to run the last one if any");
@@ -445,27 +447,32 @@ void set_breakpoint_at_addr(debugger_t *dbg, uintptr_t instr_addr, bool quiet) {
 
 void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
 	size_t list_size = 0;
-	size_t symtab_idx;
-	Elf64_Sym *list = get_valid_func_symbols(dbg->syms, symbol_name, &list_size, &symtab_idx);
+	struct func_entry *functions = get_valid_func_symbols(dbg->syms, &list_size);
 	if (list_size == 0) {
-		printf("No function symbol found as \"%s\"\n", symbol_name);
+		printf("No functions found");
+		return;
 	}
+    bool func_found = false;
+
+	// sets breakpoint to all the matching symbols
 	for (size_t i = 0; i < list_size; i++) {
-		// Dwarf_Addr *addrs;
-		// int count = dwarf_entry_breakpoints(list[i], &addrs);
-		// set_breakpoint_at_addr(dbg, list[i].st_value, true);
-		char *func_name = elf_strptr(get_elf_data(dbg->syms), symtab_idx, list[i].st_name);
-		uintptr_t instr_addr = list[i].st_value;
+		// if not the match then continue
+		if (strcmp(symbol_name, functions[i].func_name)) continue;
+
+		uintptr_t instr_addr = functions[i].addr;
 		breakpoint_t *bp = bp_init(BP_SYMBOL, (void *)symbol_name, instr_addr);
 		uint64_t id = bp_get_id(bp);
 		map_insert(dbg->breakpoints, id, bp);
 		printf("Set breakpoint at \"function " YEL "%s" RESET "\" of id " BYEL "%lu" RESET " ...\n",
-		       func_name,
+		       functions[i].func_name,
 		       id);
+
 		add_breakpoint_as_pending(&dbg->pending_breakpoints, bp);
 		add_and_set_bp_for_running_tracee(dbg, instr_addr, bp);
+        func_found = true;
 	}
-	free(list);
+
+    if (!func_found) printf("No function found as \"%s\"\n", symbol_name);
 }
 
 void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno) {
@@ -473,6 +480,7 @@ void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno)
 	// currently user is wandering around and set the breakpoint in that file
 	if (!filename && dbg->state == ACTIVE) {
 		Dwarf_Die *cudie = get_cudie_from_pc(dbg->syms, get_pc(dbg->pid));
+        if (!cudie) return;
 		const char *name = dwarf_diename(cudie);
 		if (name)
 			filename = name;

@@ -81,7 +81,8 @@ void step_in(debugger_t *dbg) {
 	int line =
 	    get_line_from_pc(dbg_get_symbols(dbg), get_pc(dbg_get_pid(dbg)), &file, NULL, &is_outdated);
 	if (line == 0) {
-		CRITICAL("Something is wrong");
+		printf("Can't do this! idk why. but maybe not at this address where you currently are\n");
+        return;
 	}
 
 	// loop until we are on the same line
@@ -102,17 +103,18 @@ void step_over(debugger_t *dbg) {
 	Dwarf_Die func_die = {0};
 	get_func_die_from_pc(dbg_get_symbols(dbg), pc, &func_die, load_address);
 
-	Dwarf_Addr func_entry, func_end;
+	Dwarf_Addr func_start, func_end;
 	const char *func_name = dwarf_diename(&func_die);
 	if (func_name) {
 		DBG_LOG("diename: %s", func_name);
 	} else {
-		CRITICAL("something is wrong with function die\n");
+		printf("can't perform this! something is wrong with the address you are currently at. idk why\n");
+        return;
 	}
-	dwarf_lowpc(&func_die, &func_entry);
+	dwarf_lowpc(&func_die, &func_start);
 	dwarf_highpc(&func_die, &func_end);
-	DBG_LOG("func_entry: %lx, func_end: %lx", func_entry, func_end);
-	func_entry += load_address;
+	DBG_LOG("func_start: %lx, func_end: %lx", func_start, func_end);
+	func_start += load_address;
 	func_end += load_address;
 
 	size_t to_delete_cap = 100;
@@ -179,20 +181,20 @@ static const char *print_frame(debugger_t *dbg, dbg_symbols *syms, uintptr_t pc,
 	// const char *func_name;
 	const char *func_name = dwarf_diename(&func_die);
 	if (!func_name) {
-		printf("something is wrong \n");
+		printf("something is wrong! maybe your current address is not in the favor of this debugger\n");
 		return NULL;
 	}
 
 	if (is_first) {
-		Dwarf_Addr func_entry;
-		dwarf_lowpc(&func_die, &func_entry);
+		Dwarf_Addr func_start;
+		dwarf_lowpc(&func_die, &func_start);
 
 		uintptr_t temp_bp_addr = pc + 4;
 		bool to_delete_temp_bp = false;
 
 		// if the pc is at function's entry point that means the rbp is
 		// not yet ready for the backtrace so move the pc forward
-		if (func_entry == pc - load_address) {
+		if (func_start == pc - load_address) {
 			if (set_temp_bp_location(dbg, pc + 4)) to_delete_temp_bp = true;
 			// BUG: this prints the source code unncessarily
 			continue_execution(dbg);
@@ -202,7 +204,7 @@ static const char *print_frame(debugger_t *dbg, dbg_symbols *syms, uintptr_t pc,
 			pc = new_pc;
 		}
 
-		assert(func_entry != pc - load_address);
+		assert(func_start != pc - load_address);
 	}
 
 	bool is_outdated = false;
@@ -248,12 +250,14 @@ void print_backtrace(debugger_t *dbg) {
 	uintptr_t pc = get_pc(pid);
 
 	const char *func_name = print_frame(dbg, syms, pc, pid, load_address, true);
+    if (!func_name) return;
 	uint64_t frame_pointer = get_register_value(rbp, pid);
 	uint64_t return_address = read_memory(pid, frame_pointer + 8);
 	// printf("ra: %#lx\n", return_address);
 
 	while (strcmp(func_name, "main") != 0) {
 		func_name = print_frame(dbg, syms, return_address, pid, load_address, false);
+        if (!func_name) return;
 
 		frame_pointer = read_memory(pid, frame_pointer);
 		return_address = read_memory(pid, frame_pointer + 8);

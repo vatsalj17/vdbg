@@ -19,6 +19,7 @@ const command_entry commands[] = {
     {"backtrace", cmd_backtrace, true, false, "Pring backtrace"},
     {"continue", cmd_continue, true, false, "Resume execution"},
     {"clear", cmd_clear, false, false, "Clears the screen"},
+    {"context", cmd_context, true, true, "Print the source code at the current instruction"},
     {"delete", cmd_delete, false, false, "Delete specific breakpoint or all if not specified"},
     {"disable", cmd_disable, false, false, "Disable any breakpoint"},
     {"disassemble", cmd_disassemble, false, false, "Print the disassembly"},
@@ -32,12 +33,13 @@ const command_entry commands[] = {
     {"ls", cmd_ls, false, false, "List current directory"},
     {"memory", cmd_mem, true, false, "Manipulate memory at address"},
     {"next", cmd_next, true, true, "Step over current instruction"},
+    {"plt", cmd_plt, false, false, "Print the procedure linkage table"},
     {"run", cmd_run, false, false, "Start tracee"},
     {"restart", cmd_restart, true, false, "Restart tracee"},
     {"register", cmd_reg, true, false, "Manage CPU registers"},
     {"step", cmd_step, true, true, "Single step throught source code"},
     {"stepi", cmd_stepi, true, false, "Single step through instructions"},
-    {"source", cmd_source, true, true, "Print the source code at the current instruction"},
+    {"source", cmd_source, false, false, "Source your script"},
     {"sections", cmd_sections, false, false, "List all the matching section headers"},
     {"symbols", cmd_symbols, false, false, "List all the matching symbols"},
     {"vmmap", cmd_vmmap, true, false, "Print the virtual memory layout of program"},
@@ -116,6 +118,28 @@ void cmd_exit(debugger_t *dbg, UNUSED char **args) {
 
 void cmd_vmmap(debugger_t *dbg, UNUSED char **args) {
 	print_memory_map(dbg_get_pid(dbg));
+}
+
+void cmd_plt(debugger_t *dbg, char **args) {
+	char *func_name = args[1];
+	bool print_all = func_name == NULL;
+	size_t size;
+	struct func_entry *list = get_plt_entries(dbg_get_symbols(dbg), &size);
+
+	if (!list) {
+		printf("can't print plt\n");
+		return;
+	}
+	if (size == 0) {
+		printf("no plt entry found\n");
+	}
+
+	for (size_t i = 0; i < size; i++) {
+		if (print_all || strstr(list[i].func_name, func_name)) {
+			printf("%#lx: %s\n", list[i].addr, list[i].func_name);
+		}
+	}
+	free(list);
 }
 
 void cmd_arguments(debugger_t *dbg, char **args) {
@@ -249,7 +273,7 @@ void cmd_disable(debugger_t *dbg, char **args) {
 	}
 }
 
-void cmd_source(debugger_t *dbg, char **args) {
+void cmd_context(debugger_t *dbg, char **args) {
 	char *context = args[1];
 	int lines_context = (context) ? atoi(context) : DEFAULT_LINE_CONTEXT;
 	print_source_at_current_pc(
@@ -265,7 +289,24 @@ void cmd_symbols(debugger_t *dbg, char **args) {
 }
 
 void cmd_functions(debugger_t *dbg, char **args) {
-	list_all_functions(dbg_get_symbols(dbg), args[1]);
+	char *func_name = args[1];
+
+	size_t funcs_list_size = 0;
+	bool print_all = (func_name == NULL);
+	struct func_entry *funcs_list = get_valid_func_symbols(dbg_get_symbols(dbg), &funcs_list_size);
+	if (funcs_list_size == 0) {
+		printf("no functions found! what's wrong with your executable\n");
+		return;
+	}
+
+	uintptr_t load_address = dbg_get_load_address(dbg);
+	for (size_t i = 0; i < funcs_list_size; i++) {
+		if (print_all || strstr(funcs_list[i].func_name, func_name)) {
+			// Elf64_Addr addr = list[i].addr;
+			// if (addr) addr += load_address;
+			printf("0x%08lx %s\n", funcs_list[i].addr + load_address, funcs_list[i].func_name);
+		}
+	}
 }
 
 void cmd_reg(debugger_t *dbg, char **args) {
@@ -298,6 +339,32 @@ void cmd_mem(debugger_t *dbg, char **args) {
 
 void cmd_disassemble(debugger_t *dbg, char **args) {
 	print_disassembly_of_function(dbg, args[1]);
+}
+
+void cmd_source(debugger_t *dbg, char **args) {
+	char *script_path = args[1];
+	if (!script_path) {
+		printf("nothing to source\n");
+	}
+
+	FILE *fp = fopen(script_path, "r");
+	if (!fp) {
+		fprintf(stderr, "Invalid script path: %s\n", script_path);
+		perror("fopen");
+		return;
+	}
+
+	char *line = NULL;
+	size_t len = 0;
+	while (getline(&line, &len, fp) != EOF) {
+		if (line[0] == '#') continue; // using # as comment
+		line[strcspn(line, "\n")] = '\0';
+		if (line[0] == '\0') continue; // skip empty lines
+		handle_command(dbg, line);
+	}
+
+	free(line);
+	fclose(fp);
 }
 
 void handle_command(debugger_t *dbg, char *input) {
