@@ -4,14 +4,14 @@ TARGET = demo
 
 all: $(TARGET)
 
-$(TARGET): main.o math_utils.o
-	$(CC) $(CFLAGS) -o $(TARGET) main.o math_utils.o
+$(TARGET): main.o utils.o
+	$(CC) $(CFLAGS) -o $(TARGET) main.o utils.o
 
-main.o: main.c math_utils.h
+main.o: main.c utils.h
 	$(CC) $(CFLAGS) -c main.c
 
-math_utils.o: math_utils.c math_utils.h
-	$(CC) $(CFLAGS) -c math_utils.c
+utils.o: utils.c utils.h
+	$(CC) $(CFLAGS) -c utils.c
 
 clean:
 	rm -f *.o $(TARGET)

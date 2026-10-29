@@ -91,6 +91,16 @@ bool bp_is_enabled(breakpoint_t *bp) {
 	return bp->enable;
 }
 
+char *bp_get_symbol(breakpoint_t *bp) {
+	if (bp->type != BP_SYMBOL) return NULL;
+	return bp->symbol;
+}
+
+file_line_pair *bp_get_flpair(breakpoint_t *bp) {
+	if (bp->type != BP_LINENO) return NULL;
+	return &bp->fl_pair;
+}
+
 // if all breakpoints in the list of bp->location are enabled then patch
 void bp_enable(breakpoint_t *bp) {
 	bp->enable = true;

@@ -16,6 +16,11 @@ SRC_DIR = src
 INC_DIR = include
 OBJ_DIR = obj
 
+PREFIX ?= /usr/local
+BIN_DIR = $(PREFIX)/bin
+COMPLETION_DIR = $(PREFIX)/share/bash-completion/completions
+COMPLETION_SRC = completions/vdbg_comp.bash
+
 SRC = $(wildcard $(SRC_DIR)/*.c)
 OBJ = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRC))
 
@@ -41,7 +46,13 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(ACTIVE_CFLAGS) -I$(INC_DIR) -c $< -o $@
 
 install: build
-	sudo cp $(TARGET) /usr/local/bin/
+	sudo cp $(TARGET) $(BIN_DIR)/
+	sudo mkdir -p $(COMPLETION_DIR)
+	sudo cp $(COMPLETION_SRC) $(COMPLETION_DIR)/$(TARGET)
+
+uninstall:
+	sudo rm -f $(BIN_DIR)/$(TARGET)
+	sudo rm -f $(COMPLETION_DIR)/$(TARGET)
 
 clean:
 	rm -rf $(TARGET) $(OBJ_DIR)

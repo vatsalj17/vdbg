@@ -12,7 +12,6 @@
 #include "macro.h"
 
 // TODO: loading of dynamic libraires
-// TODO: add disassembly feature
 
 void print_help(void) {
 	printf("Usage: vdbg [options] <executable>\n\n"

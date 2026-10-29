@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "math_utils.h"
+#include "utils.h"
 
 typedef int (*operation) (int, int);
 

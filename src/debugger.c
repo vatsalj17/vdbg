@@ -24,18 +24,10 @@
 #include "symbols.h"
 #include "stepping.h"
 #include "list.h"
+#include "completion.h"
 
 #define MAP_SIZE 1024
 #define MAX_ARGS 50
-
-// enabling tab completion support for speed
-static char **my_completion(const char *text, int start, int end UNUSED) {
-	rl_attempted_completion_over = 1;
-	if (start == 0) {
-		return rl_completion_matches(text, command_generator);
-	}
-	return NULL;
-}
 
 typedef struct Debugger {
 	char *process_name; // the command
@@ -157,7 +149,7 @@ void add_arguments_for_tracee(debugger_t *dbg, char **args_list) {
 
 void dbg_start(debugger_t *dbg) {
 	// setting up my own commands for completion
-	rl_attempted_completion_function = my_completion;
+	completion_init(dbg);
 
 	if (!has_dwarf_symbols(dbg->syms)) {
 		printf(RED "\n[" BYEL " Warning: " RESET "this executable doesn't contain debug symbols" RED
@@ -173,7 +165,7 @@ void dbg_start(debugger_t *dbg) {
 		// \001 -> start of non printable chars
 		// \002 -> end of non printable chars
 		if ((input = readline("\001" HBLK "\002[\001" BHMAG "\002vdbg\001" HBLK "\002]\001" BHYEL
-		                      "\002❯ \001" RESET "\002")) != NULL) {
+		                      "\002> \001" RESET "\002")) != NULL) {
 			// avoid empty prompt
 			if (input[0] == '\0') {
 				DBG_LOG("empty cmdline. trying to run the last one if any");
@@ -452,7 +444,7 @@ void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
 		printf("No functions found");
 		return;
 	}
-    bool func_found = false;
+	bool func_found = false;
 
 	// sets breakpoint to all the matching symbols
 	for (size_t i = 0; i < list_size; i++) {
@@ -469,10 +461,10 @@ void set_breakpoint_at_func_symbol(debugger_t *dbg, const char *symbol_name) {
 
 		add_breakpoint_as_pending(&dbg->pending_breakpoints, bp);
 		add_and_set_bp_for_running_tracee(dbg, instr_addr, bp);
-        func_found = true;
+		func_found = true;
 	}
 
-    if (!func_found) printf("No function found as \"%s\"\n", symbol_name);
+	if (!func_found) printf("No function found as \"%s\"\n", symbol_name);
 }
 
 void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno) {
@@ -480,7 +472,7 @@ void set_breakpoint_at_lineno(debugger_t *dbg, const char *filename, int lineno)
 	// currently user is wandering around and set the breakpoint in that file
 	if (!filename && dbg->state == ACTIVE) {
 		Dwarf_Die *cudie = get_cudie_from_pc(dbg->syms, get_pc(dbg->pid));
-        if (!cudie) return;
+		if (!cudie) return;
 		const char *name = dwarf_diename(cudie);
 		if (name)
 			filename = name;

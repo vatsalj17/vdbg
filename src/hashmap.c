@@ -30,15 +30,15 @@ map_t *map_init(uint32_t size, cleanupfunction *cf) {
 	map_t *ht = malloc(sizeof(map_t));
 	ht->cf = cf;
 
-    // we can't have even size since it will lead to 
-    // having __builtin_ctz(size) = 0 so shift_bits 
-    // will become 64 and we can't shift a 64 bit number by 64 bits
-    if (size & 1) size++; 
+	// we can't have even size since it will lead to
+	// having __builtin_ctz(size) = 0 so shift_bits
+	// will become 64 and we can't shift a 64 bit number by 64 bits
+	if (size & 1) size++;
 
 	ht->shift_bits = 64 - (uint8_t)__builtin_ctz(size); // 64 - log2(size)
 	// __builtin_ctz counts trailing zeros from the lsb
 
-    ht->size = size;
+	ht->size = size;
 	ht->elements = calloc(ht->size, sizeof(entry *));
 	return ht;
 }

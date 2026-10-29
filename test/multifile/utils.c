@@ -1,4 +1,4 @@
-#include "math_utils.h"
+#include "utils.h"
 
 int add(int a, int b) {
     int result = a + b;

@@ -19,23 +19,6 @@ void print_src_file_outdated_warning(void) {
 	printf("[" RESET " pls recompile the code and then debug " RED "]\n" RESET);
 }
 
-char *command_generator(const char *text, int state) {
-	static unsigned long i, len;
-	if (!state) {
-		i = 0;
-		len = strlen(text);
-	}
-
-	const char *cmd;
-	while ((cmd = commands[i++].name)) {
-		if (strncmp(cmd, text, len) == 0) {
-			return strdup(cmd);
-		}
-	}
-
-	return NULL;
-}
-
 char **split(char *str, char delim, char **free_it) {
 	// making the copy of str so that it isn't modified
 	char *to_parse = strdup(str);

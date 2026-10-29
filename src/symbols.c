@@ -31,19 +31,25 @@ static const Dwfl_Callbacks proc_callbacks = {
     .find_elf = dwfl_linux_proc_find_elf,
 };
 
-struct dbg_symbols {
-	Elf *elf_data;                 // elf stuffs
-	Dwfl *dwfl_data_proc;          // dwarf parsing while running program
-	Dwfl *dwfl_data_offline;       // dwarf parsing while offline program
-	bool has_dwarf_symbols;        // check for printing the src code
-	time_t mtime;                  // last modified to time of the executable
-	Elf64_Ehdr *ehdr;              // elf header
+typedef struct {
 	ssize_t strtab_idx;            // string table index saved so that it can accessed anytime
 	ssize_t dynstr_idx;            // dynamic string table saved for same reason
 	Elf_Scn *symbol_table;         // storing the symbol_table in the main struct for fast lookup
 	Elf_Scn *dynamic_symbol_table; // .dynsym is also stored for same reason
 	struct func_entry *funcs_list; // all the valid functions in the executable being cached here
 	size_t funcs_list_size;        // size of this functions list array
+	const char **file_names;       // all the file names mentioned in the executable
+	size_t file_names_size;        // size of file_names array
+} cached_data;
+
+struct dbg_symbols {
+	Elf *elf_data;           // elf stuffs
+	Dwfl *dwfl_data_proc;    // dwarf parsing while running program
+	Dwfl *dwfl_data_offline; // dwarf parsing while offline program
+	bool has_dwarf_symbols;  // check for printing the src code
+	time_t mtime;            // last modified to time of the executable
+	Elf64_Ehdr *ehdr;        // elf header
+	cached_data cache;       // caching pointers to frequently refernced data
 };
 
 // if shdr is passed then scn_idx is of no use
@@ -81,49 +87,64 @@ static inline bool verif_elf_signature(int fd) {
 		return false;
 }
 
-static void cache_all_functions(dbg_symbols *syms) {
-	if (!syms->symbol_table) {
-        return;
+static void cache_all_functions_and_filenames(dbg_symbols *syms) {
+	if (!syms->cache.symbol_table) {
+		return;
 	}
 
 	size_t pltent_size;
 	struct func_entry *plt_entries = get_plt_entries(syms, &pltent_size);
 
 	size_t symlist_size = 0;
-	Elf64_Sym *sym_list = get_symbols(syms, NULL, syms->symbol_table, &symlist_size);
+	Elf64_Sym *sym_list = get_symbols(
+	    syms, NULL, syms->cache.symbol_table, (size_t)syms->cache.strtab_idx, &symlist_size);
 
 	size_t idx = 0, final_cap = pltent_size + symlist_size;
 	struct func_entry *final_list = malloc(final_cap * sizeof(struct func_entry));
 
 	// copying all the plt entries to final list
 	for (size_t i = 0; i < pltent_size; i++) {
-        size_t func_name_size = strlen(plt_entries[i].func_name);
+		size_t func_name_size = strlen(plt_entries[i].func_name);
 
 		// converting `function_name` to `function_name@plt`
 		char *plt_func_name = calloc(func_name_size + 5, sizeof(char));
-        memcpy(plt_func_name, plt_entries[i].func_name, func_name_size);
-        memcpy(plt_func_name + func_name_size, "@plt", 4);
+		memcpy(plt_func_name, plt_entries[i].func_name, func_name_size);
+		memcpy(plt_func_name + func_name_size, "@plt", 4);
 
-        final_list[idx].func_name = plt_func_name;
+		final_list[idx].func_name = plt_func_name;
 		final_list[idx].addr = plt_entries[i].addr;
-        final_list[idx].size = 0x10; // since all plt entries have 0x10 size
+		final_list[idx].size = 0x10; // since all plt entries have 0x10 size
 		idx++;
 	}
 
 	for (size_t i = 0; i < symlist_size; i++) {
 		unsigned char type = ELF64_ST_TYPE(sym_list[i].st_info);
-		char *name = get_symbol_name_from_strtab(syms, sym_list[i].st_name);
+		char *name =
+		    elf_strptr(syms->elf_data, (size_t)syms->cache.strtab_idx, sym_list[i].st_name);
 		if (type == STT_FUNC && sym_list[i].st_value) {
 			final_list[idx].func_name = strdup(name);
 			final_list[idx].addr = sym_list[i].st_value;
-            final_list[idx].size = sym_list[i].st_size;
+			final_list[idx].size = sym_list[i].st_size;
 			idx++;
 		}
 	}
 
 	free(plt_entries);
-	syms->funcs_list_size = idx;
-	syms->funcs_list = final_list;
+
+	const char **file_names = malloc(symlist_size * sizeof(char *));
+	size_t file_idx = 0;
+
+	Dwarf_Addr bias;
+	Dwarf_Die *cudie = NULL;
+	while ((cudie = dwfl_nextcu(syms->dwfl_data_offline, cudie, &bias)) != NULL) {
+		const char *name = dwarf_diename(cudie);
+		if (name) file_names[file_idx++] = name;
+	}
+
+	syms->cache.funcs_list_size = idx;
+	syms->cache.funcs_list = final_list;
+	syms->cache.file_names = file_names;
+	syms->cache.file_names_size = file_idx;
 }
 
 dbg_symbols *symbols_init(const char *pname) {
@@ -170,10 +191,10 @@ dbg_symbols *symbols_init(const char *pname) {
 
 	new->has_dwarf_symbols = check_for_debug_symbols(new);
 
-	new->strtab_idx = -1;
-	new->dynstr_idx = -1;
-	new->symbol_table = NULL;
-	new->dynamic_symbol_table = NULL;
+	new->cache.strtab_idx = -1;
+	new->cache.dynstr_idx = -1;
+	new->cache.symbol_table = NULL;
+	new->cache.dynamic_symbol_table = NULL;
 
 	// fetch `.strtab`, `.dynstr`, `.symtab`, `.dynsym`
 	Elf_Scn *scn = NULL;
@@ -181,19 +202,21 @@ dbg_symbols *symbols_init(const char *pname) {
 		size_t index = elf_ndxscn(scn);
 		const char *name = get_section_name_by_index(new, elf_ndxscn(scn), NULL);
 		if (!strcmp(name, ".strtab"))
-			new->strtab_idx = (ssize_t)index;
+			new->cache.strtab_idx = (ssize_t)index;
 		else if (!strcmp(name, ".dynstr"))
-			new->dynstr_idx = (ssize_t)index;
+			new->cache.dynstr_idx = (ssize_t)index;
 		else if (!strcmp(name, ".symtab"))
-			new->symbol_table = scn;
+			new->cache.symbol_table = scn;
 		else if (!strcmp(name, ".dynsym"))
-			new->dynamic_symbol_table = scn;
+			new->cache.dynamic_symbol_table = scn;
 	}
 
-    // caching all the functions in the main struct
-    new->funcs_list_size = 0;
-    new->funcs_list = NULL;
-    cache_all_functions(new);
+	// caching all the functions in the main struct
+	new->cache.funcs_list_size = 0;
+	new->cache.funcs_list = NULL;
+	new->cache.file_names_size = 0;
+	new->cache.file_names = NULL;
+	cache_all_functions_and_filenames(new);
 
 	struct stat file_stats;
 	if (stat(pname, &file_stats) == -1) {
@@ -220,12 +243,13 @@ Elf *get_elf_data(dbg_symbols *sym) {
 
 // returns all the valid functions including plt ones
 struct func_entry *get_valid_func_symbols(dbg_symbols *syms, size_t *return_size) {
-	*return_size = syms->funcs_list_size;
-	return syms->funcs_list;
+	*return_size = syms->cache.funcs_list_size;
+	return syms->cache.funcs_list;
 }
 
-char *get_symbol_name_from_strtab(dbg_symbols *syms, Elf64_Word idx) {
-	return elf_strptr(syms->elf_data, (size_t)syms->strtab_idx, idx);
+const char **get_source_files(dbg_symbols *syms, size_t *return_size) {
+	*return_size = syms->cache.file_names_size;
+	return syms->cache.file_names;
 }
 
 void print_elf_header(dbg_symbols *sym) {
@@ -340,7 +364,8 @@ void print_section_headers(dbg_symbols *syms, char *header_name) {
 
 // this function returns the list of matching symbols as passed in sym_name
 // if NULL is passed then it returns all the symbols
-Elf64_Sym *get_symbols(dbg_symbols *syms, const char *sym_name, Elf_Scn *scn, size_t *return_size) {
+Elf64_Sym *get_symbols(dbg_symbols *syms, const char *sym_name, Elf_Scn *scn,
+                       size_t string_table_idx, size_t *return_size) {
 	assert(scn);
 	Elf_Data *data = elf_getdata(scn, NULL);
 	Elf64_Sym *symbols = data->d_buf;
@@ -356,7 +381,7 @@ Elf64_Sym *get_symbols(dbg_symbols *syms, const char *sym_name, Elf_Scn *scn, si
 	char *name;
 	for (size_t j = 0; j < no_of_symbols; j++) {
 		Elf64_Sym symbol = symbols[j];
-		name = get_symbol_name_from_strtab(syms, symbol.st_name);
+		name = elf_strptr(syms->elf_data, (size_t)string_table_idx, symbol.st_name);
 		if (strstr(name, sym_name)) {
 			symbols_list[idx++] = symbol;
 		}
@@ -395,9 +420,9 @@ static void print_symbols(dbg_symbols *syms, char *sym_name, Elf_Scn *scn) {
 	ssize_t string_table_idx = -1;
 	Elf64_Shdr *shdr = elf64_getshdr(scn);
 	if (shdr->sh_type == SHT_SYMTAB) {
-		string_table_idx = syms->strtab_idx;
+		string_table_idx = syms->cache.strtab_idx;
 	} else if (shdr->sh_type == SHT_DYNSYM) {
-		string_table_idx = syms->dynstr_idx;
+		string_table_idx = syms->cache.dynstr_idx;
 	} else {
 		printf("UNIMPLEMENTED\n");
 		abort();
@@ -410,7 +435,7 @@ static void print_symbols(dbg_symbols *syms, char *sym_name, Elf_Scn *scn) {
 	// so we leave sym_list_size to set to zero so that `print_symbols_table_header`
 	// will tell the user that no symbols found
 	if (string_table_idx != -1) {
-		symbols_list = get_symbols(syms, sym_name, scn, &sym_list_size);
+		symbols_list = get_symbols(syms, sym_name, scn, (size_t)string_table_idx, &sym_list_size);
 	}
 
 	print_symbols_table_header(sym_list_size, sym_name);
@@ -442,15 +467,15 @@ static void print_symbols(dbg_symbols *syms, char *sym_name, Elf_Scn *scn) {
 
 void print_symbols_table(dbg_symbols *syms, char *sym_name) {
 	// first print `.dynsym`
-	if (syms->dynamic_symbol_table) {
+	if (syms->cache.dynamic_symbol_table) {
 		printf("\n.dynsym: ");
-		print_symbols(syms, sym_name, syms->dynamic_symbol_table);
+		print_symbols(syms, sym_name, syms->cache.dynamic_symbol_table);
 	}
 
 	// then `.symtab`
-	if (syms->symbol_table) {
+	if (syms->cache.symbol_table) {
 		printf("\n.symtab: ");
-		print_symbols(syms, sym_name, syms->symbol_table);
+		print_symbols(syms, sym_name, syms->cache.symbol_table);
 	}
 }
 
@@ -501,11 +526,6 @@ int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file, const c
 
 // also updates the *file as recent file if file is passed as NULL
 uintptr_t get_addr_from_lineno(dbg_symbols *syms, const char **file, int lineno) {
-	// if it's a full path then extract the basename
-	if (*file && strchr(*file, '/')) {
-		*file = basename(*file);
-	}
-
 	Dwarf_Addr bias;
 	Dwarf_Die *cudie = NULL;
 
@@ -633,7 +653,7 @@ struct func_entry *get_plt_entries(dbg_symbols *syms, size_t *return_size) {
 	}
 
 	// `if not found just return`
-	if (!scn_plt || !scn_rela_plt || !syms->dynamic_symbol_table) {
+	if (!scn_plt || !scn_rela_plt || !syms->cache.dynamic_symbol_table) {
 		free(sections);
 		*return_size = 0;
 		return NULL;
@@ -648,7 +668,7 @@ struct func_entry *get_plt_entries(dbg_symbols *syms, size_t *return_size) {
 	size_t relocs_size = rela_data->d_size / elf64_getshdr(scn_rela_plt)->sh_entsize;
 
 	// getting .dynsym because .rela.plt entries point to this section
-	Elf_Data *dynsym_data = elf_getdata(syms->dynamic_symbol_table, NULL);
+	Elf_Data *dynsym_data = elf_getdata(syms->cache.dynamic_symbol_table, NULL);
 	Elf64_Sym *dynamic_symbols = dynsym_data->d_buf;
 	size_t dynsyms_size = dynsym_data->d_size / sizeof(Elf64_Sym);
 
@@ -660,7 +680,14 @@ struct func_entry *get_plt_entries(dbg_symbols *syms, size_t *return_size) {
 
 		// fetching it's name using the .dynstr
 		plt_list[i].func_name = elf_strptr(
-		    syms->elf_data, (size_t)syms->dynstr_idx, dynamic_symbols[dynsym_idx].st_name);
+		    syms->elf_data, (size_t)syms->cache.dynstr_idx, dynamic_symbols[dynsym_idx].st_name);
+
+		// FIX: idk if this is even the correct way to do it. but as far as i have observed
+		// gcc generated binaries it's always the case
+		//
+		// what i am doing is considering that every plt entry is of size `0x10` and multiplying it with
+		// the index. adding 1 because there is an extra `0x10` slot at the beginning of plt that every
+		// entry jumps to
 		plt_list[i].addr = plt_addr + (0x10 * (i + 1));
 	}
 
@@ -720,10 +747,11 @@ uintptr_t initialize_load_address(dbg_symbols *syms, pid_t pid) {
 }
 
 void symbols_free(dbg_symbols *syms) {
-    for (size_t i = 0; i < syms->funcs_list_size; i++) {
-        free(syms->funcs_list[i].func_name);
-    }
-    free(syms->funcs_list);
+	for (size_t i = 0; i < syms->cache.funcs_list_size; i++) {
+		free(syms->cache.funcs_list[i].func_name);
+	}
+	free(syms->cache.funcs_list);
+	free(syms->cache.file_names);
 
 	dwfl_end(syms->dwfl_data_proc);
 	dwfl_end(syms->dwfl_data_offline);

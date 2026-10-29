@@ -8,7 +8,7 @@ A Linux debugger built from scratch in C using `ptrace`. Made this to understand
 - **Registers & Memory**: read/write CPU registers and raw memory
 - **ELF/DWARF inspection**: elf header, section headers, symbol table, functions list
 - **PIE/ASLR**: reads `/proc/<pid>/maps` and handles offsets automatically
-- **CLI**: tab completion, command history, prefix matching (`c` works for `continue`), empty enter repeats last command
+- **CLI**: context-aware tab completion, command history, prefix matching (`c` works for `continue`), empty enter repeats last command
 - **Scripting**: `--script <file>` or `-ex <cmd>` to automate stuff on startup
 
 ## Under the Hood
@@ -60,7 +60,8 @@ vdbg --script commands.vdbg ./a.out
 | `sections [name]` | List section headers |
 | `symbols [name]` | List symbols |
 | `functions [name]` | List functions |
-| `plt` | Print procedure linkage table |
+| `files` | List source files |
+| `plt [name]` | Print procedure linkage table |
 | `disassemble <func>` | Print the disassembly |
 | `vmmap` | Print virtual memory layout |
 | `source <file>` | Execute commands from script |

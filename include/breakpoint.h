@@ -29,6 +29,8 @@ breakpoint_t *bp_init(bp_kind type, void *data, uintptr_t instr_addr);
 uint64_t bp_get_id(breakpoint_t *bp);
 uintptr_t bp_get_instr_addr(breakpoint_t *bp);
 bool bp_is_enabled(breakpoint_t *bp);
+char *bp_get_symbol(breakpoint_t *bp);
+file_line_pair *bp_get_flpair(breakpoint_t *bp);
 void bp_free(breakpoint_t *bp);
 
 void bp_enable(breakpoint_t *bp);

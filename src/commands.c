@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "completion.h"
 #include "registers.h"
 #include "util.h"
 #include "macro.h"
@@ -14,36 +15,37 @@
 #include "disassemble.h"
 
 const command_entry commands[] = {
-    {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee"},
-    {"break", cmd_break, false, false, "Set breakpoint"},
-    {"backtrace", cmd_backtrace, true, false, "Pring backtrace"},
-    {"continue", cmd_continue, true, false, "Resume execution"},
-    {"clear", cmd_clear, false, false, "Clears the screen"},
-    {"context", cmd_context, true, true, "Print the source code at the current instruction"},
-    {"delete", cmd_delete, false, false, "Delete specific breakpoint or all if not specified"},
-    {"disable", cmd_disable, false, false, "Disable any breakpoint"},
-    {"disassemble", cmd_disassemble, false, false, "Print the disassembly"},
-    {"exit", cmd_exit, false, false, "Exit the debugger"},
-    {"enable", cmd_enable, false, false, "Enable any breakpoint"},
-    {"finish", cmd_finish, true, true, "Skip the current function"},
-    {"functions", cmd_functions, false, false, "List all the functions"},
-    {"help", cmd_help, false, false, "Show this menu"},
-    {"header", cmd_header, false, false, "Print ELF header"},
-    {"list", cmd_list, false, false, "List all the breakpoints"},
-    {"ls", cmd_ls, false, false, "List current directory"},
-    {"memory", cmd_mem, true, false, "Manipulate memory at address"},
-    {"next", cmd_next, true, true, "Step over current instruction"},
-    {"plt", cmd_plt, false, false, "Print the procedure linkage table"},
-    {"run", cmd_run, false, false, "Start tracee"},
-    {"restart", cmd_restart, true, false, "Restart tracee"},
-    {"register", cmd_reg, true, false, "Manage CPU registers"},
-    {"step", cmd_step, true, true, "Single step throught source code"},
-    {"stepi", cmd_stepi, true, false, "Single step through instructions"},
-    {"source", cmd_source, false, false, "Source your script"},
-    {"sections", cmd_sections, false, false, "List all the matching section headers"},
-    {"symbols", cmd_symbols, false, false, "List all the matching symbols"},
-    {"vmmap", cmd_vmmap, true, false, "Print the virtual memory layout of program"},
-    {NULL, NULL, NULL, NULL, NULL},
+    {"arguments", cmd_arguments, false, false, "Pass arguments to the tracee", NULL},
+    {"break", cmd_break, false, false, "Set breakpoint", complete_break},
+    {"backtrace", cmd_backtrace, true, false, "Pring backtrace", NULL},
+    {"continue", cmd_continue, true, false, "Resume execution", NULL},
+    {"clear", cmd_clear, false, false, "Clears the screen", NULL},
+    {"context", cmd_context, true, true, "Print the source code at the current instruction", NULL},
+    {"delete", cmd_delete, false, false, "Delete a bp or all if not specified", complete_delete},
+    {"disable", cmd_disable, false, false, "Disable any breakpoint", complete_disable},
+    {"disassemble", cmd_disassemble, false, false, "Print the disassembly", complete_disassemble},
+    {"exit", cmd_exit, false, false, "Exit the debugger", NULL},
+    {"enable", cmd_enable, false, false, "Enable any breakpoint", complete_enable},
+    {"finish", cmd_finish, true, true, "Skip the current function", NULL},
+    {"files", cmd_files, false, false, "List all the source files", NULL},
+    {"functions", cmd_functions, false, false, "List all the functions", NULL},
+    {"help", cmd_help, false, false, "Show this menu", NULL},
+    {"header", cmd_header, false, false, "Print ELF header", NULL},
+    {"list", cmd_list, false, false, "List all the breakpoints", NULL},
+    {"ls", cmd_ls, false, false, "List current directory", NULL},
+    {"memory", cmd_mem, true, false, "Manipulate memory at address", complete_memory},
+    {"next", cmd_next, true, true, "Step over current instruction", NULL},
+    {"plt", cmd_plt, false, false, "Print the procedure linkage table", NULL},
+    {"run", cmd_run, false, false, "Start tracee", NULL},
+    {"restart", cmd_restart, true, false, "Restart tracee", NULL},
+    {"register", cmd_reg, true, false, "Manage CPU registers", complete_register},
+    {"step", cmd_step, true, true, "Single step throught source code", NULL},
+    {"stepi", cmd_stepi, true, false, "Single step through instructions", NULL},
+    {"source", cmd_source, false, false, "Source your script", complete_source},
+    {"sections", cmd_sections, false, false, "List all the matching section headers", NULL},
+    {"symbols", cmd_symbols, false, false, "List all the matching symbols", NULL},
+    {"vmmap", cmd_vmmap, true, false, "Print the virtual memory layout of program", NULL},
+    {NULL, NULL, NULL, NULL, NULL, NULL},
 };
 
 void cmd_help(UNUSED debugger_t *dbg, UNUSED char **args) {
@@ -104,6 +106,13 @@ void cmd_backtrace(debugger_t *dbg, UNUSED char **args) {
 
 void cmd_list(debugger_t *dbg, UNUSED char **args) {
 	print_breakpoint_list(dbg_get_pending_list(dbg));
+}
+
+void cmd_files(debugger_t *dbg, UNUSED char **args) {
+	size_t size = 0;
+	const char **files = get_source_files(dbg_get_symbols(dbg), &size);
+	for (size_t i = 0; i < size; i++)
+		printf("%s\n", files[i]);
 }
 
 void cmd_exit(debugger_t *dbg, UNUSED char **args) {

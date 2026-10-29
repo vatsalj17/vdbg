@@ -10,7 +10,7 @@
 struct func_entry {
 	char *func_name;
 	Elf64_Addr addr;
-    Elf64_Xword size;
+	Elf64_Xword size;
 };
 
 typedef struct dbg_symbols dbg_symbols;
@@ -21,14 +21,14 @@ bool has_dwarf_symbols(dbg_symbols *sym);
 Dwfl *get_dwarf_data(dbg_symbols *sym);
 Elf *get_elf_data(dbg_symbols *sym);
 struct func_entry *get_valid_func_symbols(dbg_symbols *syms, size_t *return_size);
+const char **get_source_files(dbg_symbols *syms, size_t *return_size);
 
 void print_section_headers(dbg_symbols *sym, char *header_name);
 void print_symbols_table(dbg_symbols *sym, char *sym_name);
 void print_elf_header(dbg_symbols *sym);
 struct func_entry *get_plt_entries(dbg_symbols *syms, size_t *return_size);
-Elf64_Sym *get_symbols(dbg_symbols *syms, const char *sym_name, Elf_Scn *scn, size_t *return_size);
-
-char *get_symbol_name_from_strtab(dbg_symbols *syms, Elf64_Word idx);
+Elf64_Sym *get_symbols(dbg_symbols *syms, const char *sym_name, Elf_Scn *scn,
+                       size_t string_table_idx, size_t *return_size);
 
 void setup_dwfl(dbg_symbols *sym, pid_t pid);
 int get_line_from_pc(dbg_symbols *sym, Dwarf_Addr pc, const char **file, const char **comp_dir,
